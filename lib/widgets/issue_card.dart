@@ -1,0 +1,389 @@
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import '../models/issue_model.dart';
+import '../services/firestore_service.dart';
+import '../screens/full_screen_image_view.dart'; 
+
+class IssueCard extends StatefulWidget {
+  final Issue issue;
+
+  const IssueCard({super.key, required this.issue});
+
+  @override
+  State<IssueCard> createState() => _IssueCardState();
+}
+
+class _IssueCardState extends State<IssueCard> {
+  final FirestoreService _firestoreService = FirestoreService();
+  final User? _currentUser = FirebaseAuth.instance.currentUser;
+
+  VoteType? _optimisticVote;
+  int _optimisticUpvotes = 0;
+  int _optimisticDownvotes = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateOptimisticStateFromWidget();
+  }
+
+  void _updateOptimisticStateFromWidget() {
+    _optimisticUpvotes = widget.issue.upvotes;
+    _optimisticDownvotes = widget.issue.downvotes;
+    if (_currentUser != null && widget.issue.voters.containsKey(_currentUser.uid)) { // Keep ! if sure _currentUser not null here
+      _optimisticVote = widget.issue.voters[_currentUser.uid];
+    } else {
+      _optimisticVote = null;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant IssueCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.issue.id != oldWidget.issue.id ||
+        widget.issue.upvotes != oldWidget.issue.upvotes ||
+        widget.issue.downvotes != oldWidget.issue.downvotes ||
+        !_mapEquals(widget.issue.voters, oldWidget.issue.voters) ||
+        widget.issue.status != oldWidget.issue.status) {
+      setState(() {
+        _updateOptimisticStateFromWidget();
+      });
+    }
+  }
+
+  bool _mapEquals<T, U>(Map<T, U> a, Map<T, U> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || a[key] != b[key]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _formatTimestamp(Timestamp timestamp) {
+    final dateTime = timestamp.toDate();
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inMinutes < 1) { return 'just now'; }
+    if (difference.inMinutes < 60) { return '${difference.inMinutes}m';}
+    if (difference.inHours < 24) { return '${difference.inHours}h';}
+    if (difference.inDays < 7) { return '${difference.inDays}d';}
+    return DateFormat('dd MMM').format(dateTime); 
+  }
+
+  Color _getStatusPillBackgroundColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'resolved': return Colors.green.shade50;
+      case 'addressed': return Colors.orange.shade50;
+      case 'reported': default: return Colors.red.shade50;
+    }
+  }
+
+  Color _getStatusPillTextColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'resolved': return Colors.green.shade700;
+      case 'addressed': return Colors.orange.shade700;
+      case 'reported': default: return Colors.red.shade700;
+    }
+  }
+  
+  IconData _getStatusPillIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'resolved': return Icons.check_circle_outline_rounded;
+      case 'addressed': return Icons.task_alt_rounded;
+      case 'reported': default: return Icons.error_outline_rounded;
+    }
+  }
+
+  Future<void> _handleVote(VoteType voteType) async {
+    if (_currentUser == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You need to be logged in to vote.')),
+        );
+      }
+      return;
+    }
+
+    final String userId = _currentUser.uid; // Non-null assertion OK after check
+    
+    int previousOptimisticUpvotes = _optimisticUpvotes;
+    int previousOptimisticDownvotes = _optimisticDownvotes;
+    VoteType? previousOptimisticVote = _optimisticVote;
+
+    int newOptimisticUpvotes = _optimisticUpvotes;
+    int newOptimisticDownvotes = _optimisticDownvotes;
+    VoteType? newLocalVoteState;
+
+    if (_optimisticVote == voteType) { 
+      newLocalVoteState = null;
+      if (voteType == VoteType.upvote) { newOptimisticUpvotes--; }
+      else { newOptimisticDownvotes--; }
+    } else { 
+      newLocalVoteState = voteType;
+      if (_optimisticVote == VoteType.upvote) { newOptimisticUpvotes--; }
+      if (_optimisticVote == VoteType.downvote) { newOptimisticDownvotes--; }
+
+      if (voteType == VoteType.upvote) { newOptimisticUpvotes++; }
+      else { newOptimisticDownvotes++; }
+    }
+
+    if(mounted) {
+      setState(() {
+        _optimisticVote = newLocalVoteState;
+        _optimisticUpvotes = newOptimisticUpvotes.clamp(0, 999999);
+        _optimisticDownvotes = newOptimisticDownvotes.clamp(0, 999999);
+      });
+    }
+
+    try {
+      await _firestoreService.voteIssue(widget.issue.id, userId, voteType);
+    } catch (e) {
+      if(mounted) { 
+        setState(() {
+          _optimisticUpvotes = previousOptimisticUpvotes;
+          _optimisticDownvotes = previousOptimisticDownvotes;
+          _optimisticVote = previousOptimisticVote;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to register vote: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final bool userHasUpvoted = _optimisticVote == VoteType.upvote;
+    final bool userHasDownvoted = _optimisticVote == VoteType.downvote;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+      elevation: 1.5, 
+      shadowColor: Colors.grey.withAlpha(51),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.account_circle, size: 38, color: Colors.grey[500]),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.issue.username.isNotEmpty ? widget.issue.username : 'Anonymous',
+                        style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 15.5),
+                      ),
+                      Text(
+                        _formatTimestamp(widget.issue.timestamp),
+                        style: textTheme.bodySmall?.copyWith(color: Colors.grey[600], fontSize: 12.5),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getStatusPillBackgroundColor(widget.issue.status),
+                    borderRadius: BorderRadius.circular(16), 
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                       Icon(_getStatusPillIcon(widget.issue.status), size: 11, color: _getStatusPillTextColor(widget.issue.status)),
+                      const SizedBox(width: 3),
+                      Text(
+                        widget.issue.status,
+                        style: TextStyle(
+                            color: _getStatusPillTextColor(widget.issue.status),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: widget.issue.description.isNotEmpty ? 8 : 4),
+            if (widget.issue.description.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.issue.description, 
+                    style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha(204)),
+                    maxLines: 3, 
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  if (widget.issue.location.address.isNotEmpty)
+                    Row(
+                      children: [
+                        Icon(Icons.location_on_outlined, size: 15, color: Colors.red[400]),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            widget.issue.location.address,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[700],
+                              fontSize: 12.5,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            SizedBox(height: widget.issue.imageUrl.isNotEmpty ? 12 : 8),
+            if (widget.issue.imageUrl.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => FullScreenImageView(imageUrl: widget.issue.imageUrl),
+                    ),
+                  );
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8.0),
+                  child: Container(
+                    height: 180, 
+                    width: double.infinity,
+                    color: Colors.grey[200], 
+                    child: Image.network(
+                      widget.issue.imageUrl,
+                      fit: BoxFit.cover,
+                      height: 200, 
+                      width: double.infinity,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) { return child; } // Added braces
+                        return const Center(child: CircularProgressIndicator(strokeWidth: 2.5));
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40));
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                _ActionChipButton(
+                  icon: Icons.arrow_upward_rounded,
+                  label: _optimisticUpvotes.toString(),
+                  isActive: userHasUpvoted,
+                  activeColor: Colors.green.shade600,
+                  onTap: () => _handleVote(VoteType.upvote),
+                ),
+                const SizedBox(width: 8),
+                _ActionChipButton(
+                  icon: Icons.arrow_downward_rounded,
+                  label: _optimisticDownvotes.toString(),
+                  isActive: userHasDownvoted,
+                  activeColor: Colors.red.shade600,
+                  onTap: () => _handleVote(VoteType.downvote),
+                ),
+                const SizedBox(width: 8),
+                _ActionChipButton(
+                  icon: Icons.chat_bubble_outline_rounded, 
+                  label: widget.issue.commentsCount.toString(),
+                  onTap: () {
+                   
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('View Comments - Coming Soon!')),
+                    );
+                  },
+                ),
+                 const SizedBox(width: 8),
+                _ActionChipButton(
+                  icon: Icons.share_outlined, 
+                  label: "Share", 
+                  onTap: () {
+                  
+                     ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Share Issue - Coming Soon!')),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionChipButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isActive;
+  final Color? activeColor;
+
+  const _ActionChipButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isActive = false,
+    this.activeColor, 
+
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const Color defaultColorForElements = Colors.black54; // Define default color internally
+
+    final Color effectiveIconColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
+    final Color effectiveTextColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
+    // Use withAlpha for opacity
+    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(178) : Colors.grey[350]!; // 0.7 opacity
+    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(20) : Colors.transparent; // ~0.08 opacity
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20), 
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
+        decoration: BoxDecoration(
+          color: effectiveFillColor,
+          border: Border.all(color: effectiveBorderColor, width: 1.2),
+          borderRadius: BorderRadius.circular(20), 
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 17, color: effectiveIconColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(fontSize: 12.5, color: effectiveTextColor, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
