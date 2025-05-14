@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../../services/user_profile_service.dart';
-// import '../../services/auth_service.dart'; // Not strictly needed here for basic email/pass signup
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/auth_button.dart';
 import '../../common/app_logo.dart';
@@ -59,25 +58,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     final String password = _passwordController.text.trim();
 
     try {
-      // Optional: Check if username is already taken.
-      // Your original signup had a check against a 'usernames' collection.
-      // If 'username' in the 'users' collection should be unique, you'd query that.
-      // For simplicity, this check is omitted here but can be added back if needed.
-      // QuerySnapshot usernameCheck = await FirebaseFirestore.instance
-      //     .collection('users')
-      //     .where('username', isEqualTo: username)
-      //     .limit(1)
-      //     .get();
-      // if (usernameCheck.docs.isNotEmpty) {
-      //   if (mounted) {
-      //     ScaffoldMessenger.of(context).showSnackBar(
-      //       const SnackBar(content: Text('This username is already taken.')),
-      //     );
-      //   }
-      //   setState(() => _isLoading = false);
-      //   return;
-      // }
-
+      
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
