@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 class RiskPredictionService {
   // IMPORTANT: Replace this with your actual API key, preferably loaded from a secure configuration.
   // Avoid hardcoding API keys in production code.
-  static const _apiKey = 'AIzaSyCVOs81A4E9PTELfPjbq3Aodo42vXWc_YE'; // Replace this
+  static const _apiKey = 'YOUR-GEMINI-API-KEY'; // Replace this
 
   static const _endpoint =
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$_apiKey';
