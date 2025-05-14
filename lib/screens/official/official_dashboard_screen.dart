@@ -199,7 +199,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> {
       );
     }
     if (_departmentIssuesStream == null) { // Could happen if _setupStream condition for department name is met but stream init fails
-        return Center(child: Text('Initializing issue feed for $_departmentName...', style: TextStyle(fontSize: 16)));
+        return Center(child: Text('Initializing issue feed for $_departmentName...', style: const TextStyle(fontSize: 16)));
     }
 
     return StreamBuilder<QuerySnapshot>(
@@ -211,7 +211,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> {
         if (snapshot.hasError) {
           developer.log("Error in department issues stream: ${snapshot.error}",
               name: "OfficialDashboard");
-          return Center(child: Text('Error loading issues: ${snapshot.error}', style: TextStyle(color: Colors.red)));
+          return Center(child: Text('Error loading issues: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(
@@ -265,29 +265,29 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> {
                                 runSpacing: 4.0,
                                 children: [
                                   Chip(
-                                    label: Text(issue.status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
-                                    backgroundColor: _getStatusColor(issue.status).withOpacity(0.15),
-                                    side: BorderSide(color: _getStatusColor(issue.status).withOpacity(0.5), width: 0.5),
-                                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                    label: Text(issue.status, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
+                                    backgroundColor: _getStatusColor(issue.status).withAlpha((0.15 * 255).round()), // Replaced withOpacity
+                                    side: BorderSide(color: _getStatusColor(issue.status).withAlpha((0.5 * 255).round()), width: 0.5), // Replaced withOpacity
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                                     labelPadding: EdgeInsets.zero,
                                     visualDensity: VisualDensity.compact,
                                   ),
                                    Chip(
                                     avatar: Icon(Icons.category_outlined, size: 12, color: Theme.of(context).colorScheme.secondary),
                                     label: Text(issue.category, style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.secondary)),
-                                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.3),
+                                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer.withAlpha((0.3 * 255).round()), // Replaced withOpacity
                                     side: BorderSide.none,
-                                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                                     labelPadding: EdgeInsets.zero,
                                     visualDensity: VisualDensity.compact,
                                   ),
                                   if (issue.urgency != null && issue.urgency!.isNotEmpty)
                                     Chip(
-                                      avatar: Icon(Icons.priority_high_rounded, size: 12, color: Colors.redAccent),
-                                      label: Text(issue.urgency!, style: TextStyle(fontSize: 10, color: Colors.redAccent)),
-                                      backgroundColor: Colors.red.withOpacity(0.1),
+                                      avatar: const Icon(Icons.priority_high_rounded, size: 12, color: Colors.redAccent),
+                                      label: Text(issue.urgency!, style: const TextStyle(fontSize: 10, color: Colors.redAccent)),
+                                      backgroundColor: Colors.red.withAlpha((0.1 * 255).round()), // Replaced withOpacity
                                       side: BorderSide.none,
-                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                                       labelPadding: EdgeInsets.zero,
                                       visualDensity: VisualDensity.compact,
                                     ),
@@ -467,7 +467,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> {
       appBar: AppBar(
         title: Text(
             '${_departmentName == "Not Assigned" || _departmentName == "Loading..." ? "Official Dashboard" : _departmentName} Issues',
-             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout_outlined),
