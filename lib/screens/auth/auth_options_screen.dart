@@ -1,4 +1,4 @@
-// lib/screens/auth/auth_options_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../common/app_logo.dart';
 import '../../widgets/auth_button.dart';
