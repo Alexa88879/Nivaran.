@@ -1,11 +1,15 @@
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../models/issue_model.dart';
-import '../services/firestore_service.dart';
-import '../screens/full_screen_image_view.dart'; 
+import '../models/issue_model.dart'; // Assuming your model path
+import '../services/firestore_service.dart'; // Assuming your service path
+import '../screens/full_screen_image_view.dart'; // Assuming your screen path
+
+// Import necessary packages for AI risk prediction
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
+import '../services/risk_prediction_service.dart'; // Path to your RiskPredictionService
 
 class IssueCard extends StatefulWidget {
   final Issue issue;
@@ -24,6 +28,10 @@ class _IssueCardState extends State<IssueCard> {
   int _optimisticUpvotes = 0;
   int _optimisticDownvotes = 0;
 
+  // State variables for AI Risk Prediction
+  String? _riskPredictionText;
+  bool _isFetchingRisk = false;
+
   @override
   void initState() {
     super.initState();
@@ -33,8 +41,9 @@ class _IssueCardState extends State<IssueCard> {
   void _updateOptimisticStateFromWidget() {
     _optimisticUpvotes = widget.issue.upvotes;
     _optimisticDownvotes = widget.issue.downvotes;
-    if (_currentUser != null && widget.issue.voters.containsKey(_currentUser.uid)) { // Keep ! if sure _currentUser not null here
-      _optimisticVote = widget.issue.voters[_currentUser.uid];
+    if (_currentUser != null &&
+        widget.issue.voters.containsKey(_currentUser.uid)) { // Removed '!'
+      _optimisticVote = widget.issue.voters[_currentUser.uid]; // Removed '!'
     } else {
       _optimisticVote = null;
     }
@@ -50,6 +59,9 @@ class _IssueCardState extends State<IssueCard> {
         widget.issue.status != oldWidget.issue.status) {
       setState(() {
         _updateOptimisticStateFromWidget();
+        // Reset AI prediction if issue changes significantly
+        _riskPredictionText = null;
+        _isFetchingRisk = false;
       });
     }
   }
@@ -71,34 +83,54 @@ class _IssueCardState extends State<IssueCard> {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
 
-    if (difference.inMinutes < 1) { return 'just now'; }
-    if (difference.inMinutes < 60) { return '${difference.inMinutes}m';}
-    if (difference.inHours < 24) { return '${difference.inHours}h';}
-    if (difference.inDays < 7) { return '${difference.inDays}d';}
-    return DateFormat('dd MMM').format(dateTime); 
+    if (difference.inMinutes < 1) {
+      return 'just now';
+    }
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours}h';
+    }
+    if (difference.inDays < 7) {
+      return '${difference.inDays}d';
+    }
+    return DateFormat('dd MMM').format(dateTime);
   }
 
   Color _getStatusPillBackgroundColor(String status) {
     switch (status.toLowerCase()) {
-      case 'resolved': return Colors.green.shade50;
-      case 'addressed': return Colors.orange.shade50;
-      case 'reported': default: return Colors.red.shade50;
+      case 'resolved':
+        return Colors.green.shade50;
+      case 'addressed':
+        return Colors.orange.shade50;
+      case 'reported':
+      default:
+        return Colors.red.shade50;
     }
   }
 
   Color _getStatusPillTextColor(String status) {
     switch (status.toLowerCase()) {
-      case 'resolved': return Colors.green.shade700;
-      case 'addressed': return Colors.orange.shade700;
-      case 'reported': default: return Colors.red.shade700;
+      case 'resolved':
+        return Colors.green.shade700;
+      case 'addressed':
+        return Colors.orange.shade700;
+      case 'reported':
+      default:
+        return Colors.red.shade700;
     }
   }
-  
+
   IconData _getStatusPillIcon(String status) {
     switch (status.toLowerCase()) {
-      case 'resolved': return Icons.check_circle_outline_rounded;
-      case 'addressed': return Icons.task_alt_rounded;
-      case 'reported': default: return Icons.error_outline_rounded;
+      case 'resolved':
+        return Icons.check_circle_outline_rounded;
+      case 'addressed':
+        return Icons.task_alt_rounded;
+      case 'reported':
+      default:
+        return Icons.error_outline_rounded;
     }
   }
 
@@ -112,8 +144,8 @@ class _IssueCardState extends State<IssueCard> {
       return;
     }
 
-    final String userId = _currentUser.uid; // Non-null assertion OK after check
-    
+    final String userId = _currentUser.uid; // Removed '!'
+
     int previousOptimisticUpvotes = _optimisticUpvotes;
     int previousOptimisticDownvotes = _optimisticDownvotes;
     VoteType? previousOptimisticVote = _optimisticVote;
@@ -122,20 +154,30 @@ class _IssueCardState extends State<IssueCard> {
     int newOptimisticDownvotes = _optimisticDownvotes;
     VoteType? newLocalVoteState;
 
-    if (_optimisticVote == voteType) { 
+    if (_optimisticVote == voteType) {
       newLocalVoteState = null;
-      if (voteType == VoteType.upvote) { newOptimisticUpvotes--; }
-      else { newOptimisticDownvotes--; }
-    } else { 
+      if (voteType == VoteType.upvote) { // Added curly braces
+        newOptimisticUpvotes--;
+      } else { // Added curly braces
+        newOptimisticDownvotes--;
+      }
+    } else {
       newLocalVoteState = voteType;
-      if (_optimisticVote == VoteType.upvote) { newOptimisticUpvotes--; }
-      if (_optimisticVote == VoteType.downvote) { newOptimisticDownvotes--; }
+      if (_optimisticVote == VoteType.upvote) {
+        newOptimisticUpvotes--;
+      }
+      if (_optimisticVote == VoteType.downvote) {
+        newOptimisticDownvotes--;
+      }
 
-      if (voteType == VoteType.upvote) { newOptimisticUpvotes++; }
-      else { newOptimisticDownvotes++; }
+      if (voteType == VoteType.upvote) { // Added curly braces
+        newOptimisticUpvotes++;
+      } else { // Added curly braces
+        newOptimisticDownvotes++;
+      }
     }
 
-    if(mounted) {
+    if (mounted) {
       setState(() {
         _optimisticVote = newLocalVoteState;
         _optimisticUpvotes = newOptimisticUpvotes.clamp(0, 999999);
@@ -146,7 +188,7 @@ class _IssueCardState extends State<IssueCard> {
     try {
       await _firestoreService.voteIssue(widget.issue.id, userId, voteType);
     } catch (e) {
-      if(mounted) { 
+      if (mounted) {
         setState(() {
           _optimisticUpvotes = previousOptimisticUpvotes;
           _optimisticDownvotes = previousOptimisticDownvotes;
@@ -159,6 +201,124 @@ class _IssueCardState extends State<IssueCard> {
     }
   }
 
+  // Method to fetch and display AI risk prediction
+  Future<void> _fetchAndDisplayRiskPrediction(String imageUrl) async {
+    if (imageUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image not available for risk prediction.')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isFetchingRisk = true;
+        _riskPredictionText = null; // Clear previous prediction
+      });
+    }
+
+    try {
+      final http.Response imageResponse = await http.get(Uri.parse(imageUrl));
+      if (imageResponse.statusCode == 200) {
+        final Uint8List imageBytes = imageResponse.bodyBytes;
+        final String? prediction = await RiskPredictionService.getRiskPredictionFromImage(imageBytes);
+
+        if (mounted) {
+          setState(() {
+            _riskPredictionText = prediction ?? "No specific risks identified or unable to analyze.";
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _riskPredictionText = "Failed to load image (Error: ${imageResponse.statusCode}).";
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _riskPredictionText = "Error predicting risk. Please try again.";
+        });
+      }
+      // print("Error fetching risk prediction: $e"); // Commented out avoid_print
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingRisk = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildRiskPredictionSection() {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              InkWell(
+                onTap: _isFetchingRisk ? null : () => _fetchAndDisplayRiskPrediction(widget.issue.imageUrl),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                   padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
+                   decoration: BoxDecoration(
+                     border: Border.all(color: _isFetchingRisk ? Colors.grey.shade300 : Theme.of(context).primaryColor.withAlpha(180), width: 1.2),
+                     borderRadius: BorderRadius.circular(20),
+                     color: _isFetchingRisk ? Colors.grey.shade100 : Theme.of(context).primaryColor.withAlpha(20)
+                   ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.auto_awesome_outlined, // AI/Insight icon
+                        size: 17,
+                        color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        "AI Risk Analysis",
+                        style: TextStyle(fontSize: 12.5, color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_isFetchingRisk)
+                const Padding(
+                  padding: EdgeInsets.only(left: 10.0),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  ),
+                ),
+            ],
+          ),
+          if (_riskPredictionText != null && !_isFetchingRisk)
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 6.0),
+              child: Text(
+                _riskPredictionText!,
+                style: textTheme.bodySmall?.copyWith(
+                  color: Colors.black.withAlpha((255 * 0.75).round()), // Replaced withOpacity
+                  fontSize: 12.5,
+                  fontStyle: FontStyle.italic,
+                ),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -167,7 +327,7 @@ class _IssueCardState extends State<IssueCard> {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-      elevation: 1.5, 
+      elevation: 1.5,
       shadowColor: Colors.grey.withAlpha(51),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       color: Colors.white,
@@ -176,6 +336,7 @@ class _IssueCardState extends State<IssueCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // User Info and Status Pill Row
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -201,12 +362,12 @@ class _IssueCardState extends State<IssueCard> {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: _getStatusPillBackgroundColor(widget.issue.status),
-                    borderRadius: BorderRadius.circular(16), 
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                       Icon(_getStatusPillIcon(widget.issue.status), size: 11, color: _getStatusPillTextColor(widget.issue.status)),
+                      Icon(_getStatusPillIcon(widget.issue.status), size: 11, color: _getStatusPillTextColor(widget.issue.status)),
                       const SizedBox(width: 3),
                       Text(
                         widget.issue.status,
@@ -221,14 +382,16 @@ class _IssueCardState extends State<IssueCard> {
               ],
             ),
             SizedBox(height: widget.issue.description.isNotEmpty ? 8 : 4),
+
+            // Description and Location
             if (widget.issue.description.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.issue.description, 
+                    widget.issue.description,
                     style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha(204)),
-                    maxLines: 3, 
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
@@ -254,6 +417,8 @@ class _IssueCardState extends State<IssueCard> {
                 ],
               ),
             SizedBox(height: widget.issue.imageUrl.isNotEmpty ? 12 : 8),
+
+            // Image Display
             if (widget.issue.imageUrl.isNotEmpty)
               GestureDetector(
                 onTap: () {
@@ -267,16 +432,16 @@ class _IssueCardState extends State<IssueCard> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8.0),
                   child: Container(
-                    height: 180, 
+                    height: 180,
                     width: double.infinity,
-                    color: Colors.grey[200], 
+                    color: Colors.grey[200],
                     child: Image.network(
                       widget.issue.imageUrl,
                       fit: BoxFit.cover,
-                      height: 200, 
-                      width: double.infinity,
                       loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) { return child; } // Added braces
+                        if (loadingProgress == null) {
+                          return child;
+                        } 
                         return const Center(child: CircularProgressIndicator(strokeWidth: 2.5));
                       },
                       errorBuilder: (context, error, stackTrace) {
@@ -286,7 +451,14 @@ class _IssueCardState extends State<IssueCard> {
                   ),
                 ),
               ),
-            const SizedBox(height: 10),
+            
+            // AI Risk Prediction Section - NEW
+            if (widget.issue.imageUrl.isNotEmpty)
+              _buildRiskPredictionSection(),
+
+            const SizedBox(height: 10), // Spacing before action buttons
+
+            // Action Buttons Row
             Row(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
@@ -307,22 +479,20 @@ class _IssueCardState extends State<IssueCard> {
                 ),
                 const SizedBox(width: 8),
                 _ActionChipButton(
-                  icon: Icons.chat_bubble_outline_rounded, 
+                  icon: Icons.chat_bubble_outline_rounded,
                   label: widget.issue.commentsCount.toString(),
                   onTap: () {
-                   
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('View Comments - Coming Soon!')),
                     );
                   },
                 ),
-                 const SizedBox(width: 8),
+                const SizedBox(width: 8),
                 _ActionChipButton(
-                  icon: Icons.share_outlined, 
-                  label: "Share", 
+                  icon: Icons.share_outlined,
+                  label: "Share",
                   onTap: () {
-                  
-                     ScaffoldMessenger.of(context).showSnackBar(
+                    ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Share Issue - Coming Soon!')),
                     );
                   },
@@ -336,6 +506,7 @@ class _IssueCardState extends State<IssueCard> {
   }
 }
 
+// _ActionChipButton class
 class _ActionChipButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -348,29 +519,27 @@ class _ActionChipButton extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.isActive = false,
-    this.activeColor, 
-
+    this.activeColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    const Color defaultColorForElements = Colors.black54; // Define default color internally
+    const Color defaultColorForElements = Colors.black54;
 
     final Color effectiveIconColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
     final Color effectiveTextColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
-    // Use withAlpha for opacity
-    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(178) : Colors.grey[350]!; // 0.7 opacity
-    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(20) : Colors.transparent; // ~0.08 opacity
+    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(178) : Colors.grey[350]!;
+    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(20) : Colors.transparent;
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20), 
+      borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
         decoration: BoxDecoration(
           color: effectiveFillColor,
           border: Border.all(color: effectiveBorderColor, width: 1.2),
-          borderRadius: BorderRadius.circular(20), 
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
