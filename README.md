@@ -62,10 +62,15 @@ flutter pub get
 
 Edit android/build.gradle.kts and app/build.gradle.kts if needed. Already configured for Firebase.
 
-#### 4. Run the App
-Download the app by using apk release section in github or by visiting our website 
 
-flutter run
+## 📥 Download the App
+
+You can download the app using the link below:
+
+[Download Nivaran APK (v1.0.0)](https://github.com/Alexa88879/Nivaran./releases/download/v1.0.0/Nivaran.apk)
+
+Or visit our [official website](https://versionhost-88b2d.web.app/) 
+
 
 > 🟢 The app will launch on your connected emulator/device.
 
