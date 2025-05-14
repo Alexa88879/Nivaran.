@@ -46,8 +46,7 @@ class RoleSelectionScreen extends StatelessWidget {
                 SizedBox(height: screenHeight * 0.015),
                 AuthButton( 
                   text: 'Public Dashboard',
-                  // Using OutlinedButton style for secondary/tertiary action
-                  // but AuthButton can be styled too. For consistency:
+      
                   backgroundColor: Colors.grey.shade200,
                   textColor: Colors.black,
                   onPressed: () {

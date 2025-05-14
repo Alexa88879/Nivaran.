@@ -15,6 +15,7 @@ import 'screens/official/official_details_entry_screen.dart';
 import 'screens/official/official_set_password_screen.dart';
 import 'screens/official/official_dashboard_screen.dart'; 
 import 'screens/main_app_scaffold.dart'; 
+import 'screens/public_dashboard_screen.dart';
 
 
 void main() async {
@@ -138,10 +139,7 @@ class MyApp extends StatelessWidget {
 
         '/app': (context) => const MainAppScaffold(), 
         
-        '/public_dashboard': (context) => Scaffold(
-              appBar: AppBar(title: const Text("Public Dashboard")),
-              body: const Center(child: Text("Public Dashboard - Coming Soon!")),
-            ),
+        '/public_dashboard': (context) => const PublicDashboardScreen(),
       },
     );
   }
