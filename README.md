@@ -71,6 +71,7 @@ You can download the app using the link below:
 
 Or visit our [official website](https://versionhost-88b2d.web.app/) 
 
+> To see the ppt visit the ppt folder
 
 > 🟢 The app will launch on your connected emulator/device.
 
