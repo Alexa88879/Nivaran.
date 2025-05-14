@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'feed/issues_list_screen.dart';
 import 'report/camera_capture_screen.dart'; // Entry point for reporting
 import 'profile/account_screen.dart';
-// import 'notifications_screen.dart'; // Placeholder
+
 
 class MainAppScaffold extends StatefulWidget {
   const MainAppScaffold({super.key});

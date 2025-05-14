@@ -23,7 +23,7 @@ class UserProfileService with ChangeNotifier {
       _fetchUserProfile(_auth.currentUser!);
     } else {
       _isLoadingProfile = false; // No user, so not loading
-       // notifyListeners(); // Not strictly needed here as stream will trigger
+      
     }
   }
 

@@ -73,8 +73,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   String? _getDepartmentForCategory(String? category) {
     if (category == null) return null;
 
-    // This mapping should be robust and ideally configurable (e.g., from Firestore or constants file)
-    // For now, a hardcoded example:
     switch (category) {
       case 'Pothole':
       case 'Damaged Signage':
@@ -90,8 +88,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         return 'Water Supply Dept.';
       case 'Public Property Vandalism': // Could be general or specific to the property type
         return 'Public Safety / Police'; // Or a general maintenance department
-      // Add more specific mappings for your categories
-      // case 'Parks Issue': return 'Parks & Recreation';
       default: // For 'Other' or unmapped categories
         return 'General Grievances'; // Or a specific department that handles uncategorized issues
     }
@@ -124,8 +120,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('User not authenticated. Please log in again.')),
         );
-        // Optionally navigate to login
-        // Navigator.of(context).pushNamedAndRemoveUntil('/role_selection', (route) => false);
+      
       }
       return;
     }

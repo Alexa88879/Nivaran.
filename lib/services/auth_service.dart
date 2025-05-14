@@ -23,9 +23,7 @@ class AuthService {
   // Google Sign-In
   Future<UserCredential?> signInWithGoogle(BuildContext context) async {
     try {
-      // It's good practice to sign out from Google first to allow account picking,
-      // but only if you are sure this is the desired behavior every time.
-      // await _googleSignIn.signOut(); 
+   
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
         developer.log('Google sign-in cancelled by user.', name: "AuthService");
