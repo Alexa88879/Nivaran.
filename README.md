@@ -1,58 +1,147 @@
-# Nivaran
+# 🚨 Nivaran  — Civic Issue Reporting App
 
 <div align="center">
-
-![Nivaran Logo](assets/icon/icon.jpg)
-
-A community-driven civic issue reporting platform that empowers citizens to improve their neighborhoods through verified public feedback.
-
+  <img src="assets/icon/app_logo.png" alt="Nivaran Logo" width="150" />
 </div>
 
-## 📱 Features
+**Nivaran** is a community-powered mobile app to report, verify, and track civic issues — making neighborhoods better through collective action.
 
-- **Civic Issue Reporting**
-  - Report local infrastructure problems
-  - Track issue status and resolution
-  - Community verification system
-  - Real-time updates
+---
 
-- **Issue Categories**
-  - 🚧 Road Infrastructure (Potholes, Blockages)
-  - 💡 Street Lighting Issues
-  - 🚦 Traffic Signal Problems
-  - ⚠️ Safety Concerns
-  - And more...
+## 📱 App Features
 
-- **Community Features**
-  - Issue verification system
-  - Progress tracking
-  - Public feedback mechanism
-  - Status updates
+- 📸 **Report Civic Issues** with image, location & description
+- 📍 Live issue tracking
+- 🧠 Community verification (upvote true reports)
+- 🔔 Real-time notifications via Firebase
+- 📊 Issue categories: Road, Light, Safety, Waste, etc.
+- 🌙 Dark mode + modern Flutter UI
 
-- **Modern UI/UX**
-  - Clean and intuitive interface
-  - Responsive design
-  - Custom components
-  - Real-time notifications
+---
 
-## 🎯 Mission
+## 🚀 Quick Start Guide (for Developers)
 
-"Report Problems. Vote Truth. Empower Change."
+### ✅ Prerequisites
 
-We aim to create a transparent and efficient system for citizens to report and track civic issues in their neighborhood, fostering community engagement and faster problem resolution.
+Make sure you have:
 
-## 🚀 Getting Started
+- Flutter SDK [Install → https://docs.flutter.dev/get-started/install]
+- Android Studio OR VS Code with Dart & Flutter plugins
+- Firebase account → [https://firebase.google.com/]
+- Node.js & Firebase CLI (`npm install -g firebase-tools`)
+- A connected Android emulator OR real device
 
-### Prerequisites
+---
 
-Before you begin, ensure you have the following installed:
+### ⚙️ Step-by-Step Setup
 
-- [Flutter SDK](https://flutter.dev/docs/get-started/install)
-- [Dart SDK](https://dart.dev/get-dart)
-- [Android Studio](https://developer.android.com/studio) or [VS Code](https://code.visualstudio.com/) with Flutter extensions
+#### 1. Clone the Repository
 
-### Installation
+```bash
+git clone https://github.com/yourusername/Nivaran_3.0.git
+cd Nivaran_3.0
+flutter pub get
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/Alexa88879/Nivaran.git
+#### 2. Firebase Setup
+
+1. Go to Firebase Console (https://console.firebase.google.com/)
+2. Create a new project (e.g., `nivaran`)
+3. Add Android app:
+   - Package name: com.example.modern_auth_app
+   - Register app, download google-services.json
+   - Replace it at:  
+     android/app/google-services.json
+4. Enable:
+   - Email/Password Authentication
+   - Firebase Firestore
+   - Firebase Storage
+   - Cloud Messaging (for notifications)
+
+#### 3. Android Configuration
+
+Edit android/build.gradle.kts and app/build.gradle.kts if needed. Already configured for Firebase.
+
+
+## 📥 Download the App
+
+You can download the app using the link below:
+
+[Download Nivaran APK (v1.0.0)](https://github.com/Alexa88879/Nivaran./releases/download/v1.0.0/Nivaran.apk)
+
+Or visit our [official website](https://versionhost-88b2d.web.app/) 
+
+
+> 🟢 The app will launch on your connected emulator/device.
+
+---
+
+## 🧠 App Folder Structure
+
+Nivaran_3.0/
+│
+├── android/               # Android native files
+├── assets/                # Images, icons
+├── lib/                   # Main Flutter code
+│   ├── screens/           # App screens
+│   ├── widgets/           # Custom UI widgets
+│   ├── services/          # Firebase logic, APIs
+│   └── main.dart          # Entry point
+├── pubspec.yaml           # Dependencies
+└── README.md              # This file
+
+---
+
+## 💡 Common Issues & Fixes
+
+| Issue | Solution |
+|-------|----------|
+| google-services.json missing | Ensure it's placed in android/app/ |
+| Firebase errors | Recheck Firebase project setup and SHA-1 |
+| Plugin not installed | Run flutter pub get again |
+| App won’t start | Use physical device or enable emulator & USB debugging |
+
+
+---
+
+## 🔧 Tech Stack
+
+| Layer        | Tool            |
+|--------------|-----------------|
+| UI           | Flutter         |
+| Backend      | Firebase (Firestore, Auth) |
+| Notifications| Firebase Cloud Messaging |
+| Storage      | Cloudinary |
+
+---
+
+## 🤝 Contributing
+
+Want to improve the app? Here's how:
+
+# Fork → Clone → Create branch → Code → Push → PR
+git checkout -b feature/amazing-feature
+
+Please follow proper naming, write clean commits, and document your code.
+
+---
+
+## 📄 License
+
+MIT License. Feel free to use, improve and share!
+
+---
+
+## 🙌 Our Mission
+
+> “Report Problems. Vote Truth. Empower Change.”
+
+Help us build smarter cities by connecting people with their civic needs.
+
+---
+
+## 🔗 Useful Links
+
+- 🔥 Flutter Docs
+ (https://flutter.dev/docs)- 🎯 Firebase Docs
+ (https://firebase.google.com/docs)- 🐞 Open Issues (https://github.com/yourusername/Nivaran_3.0/issues)
