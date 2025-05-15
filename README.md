@@ -128,7 +128,10 @@ Please follow proper naming, write clean commits, and document your code.
 
 ## 📄 License
 
-MIT License. Feel free to use, improve and share!
+This project is protected by a **Custom License**.  
+You may view and contribute to this repository, but **you may not copy, re-upload, or publish this app as your own.**
+
+See the [LICENSE](./LICENSE) file for full terms.
 
 ---
 
@@ -145,3 +148,5 @@ Help us build smarter cities by connecting people with their civic needs.
 - 🔥 Flutter Docs
  (https://flutter.dev/docs)- 🎯 Firebase Docs
  (https://firebase.google.com/docs)- 🐞 Open Issues (https://github.com/yourusername/Nivaran_3.0/issues)
+
+
