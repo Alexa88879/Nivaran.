@@ -7,10 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-
-const String cloudinaryUploadPreset = 'authapp';
-const String cloudinaryCloudName = 'dfhrq3bbi';
-
+import '../secrets.dart';
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
 

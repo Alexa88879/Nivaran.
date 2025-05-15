@@ -3,9 +3,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:developer' as developer; // For logging
+import '../secrets.dart';
 
-const String cloudinaryUploadPreset = 'authapp';
-const String cloudinaryCloudName = 'dfhrq3bbi'; 
 
 class ImageUploadService {
   Future<String?> uploadImage(File imageFile) async {
