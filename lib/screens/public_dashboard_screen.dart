@@ -16,6 +16,41 @@ class PublicDashboardScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Total Issues Counter
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('issues').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return const Text('Error loading total issues');
+                }
+                final totalIssues = snapshot.data?.docs.length ?? 0;
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withAlpha(26),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.report_problem_outlined, size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Total Issues: $totalIssues',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
             const Text(
               'Resolution Times & Satisfaction Rates (by Employee)',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
