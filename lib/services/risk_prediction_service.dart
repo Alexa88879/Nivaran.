@@ -2,13 +2,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import '../secrets.dart';
 
 class RiskPredictionService {
  
-  static const _apiKey = 'AIzaSyCVOs81A4E9PTELfPjbq3Aodo42vXWc_YE'; // Replace this
 
   static const _endpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$_apiKey';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$geminiApiKey'; // Replace with your actual API key
 
   static Future<String?> getRiskPredictionFromImage(Uint8List imageBytes) async {
     final base64Image = base64Encode(imageBytes);
