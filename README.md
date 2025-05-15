@@ -38,8 +38,8 @@ Make sure you have:
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/Nivaran_3.0.git
-cd Nivaran_3.0
+git clone https://github.com/yourusername/Nivaran..git
+cd Nivaran.
 flutter pub get
 ```
 
@@ -55,8 +55,12 @@ flutter pub get
 4. Enable:
    - Email/Password Authentication
    - Firebase Firestore
-   - Firebase Storage
-   - Cloud Messaging (for notifications)
+5. Setup Cloudaninary:
+   - Create a new account
+   - Create a new cloudinary account
+   - Create a new cloudinary upload preset
+   - Make new file secrets.dart in lib 
+   - Replace cloudinaryUploadPreset , cloudinaryCloudName values 
 
 #### 3. Android Configuration
 
