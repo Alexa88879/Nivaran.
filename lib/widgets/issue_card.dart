@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../models/issue_model.dart'; // Assuming your model path
 import '../services/firestore_service.dart'; // Assuming your service path
 import '../screens/full_screen_image_view.dart'; // Assuming your screen path
+import '../widgets/comments_dialog.dart'; // Add this import
 
 // Import necessary packages for AI risk prediction
 import 'dart:typed_data';
@@ -482,8 +483,12 @@ class _IssueCardState extends State<IssueCard> {
                   icon: Icons.chat_bubble_outline_rounded,
                   label: widget.issue.commentsCount.toString(),
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('View Comments - Coming Soon!')),
+                    showDialog(
+                      context: context,
+                      builder: (context) => CommentsDialog(
+                        issueId: widget.issue.id,
+                        issueDescription: widget.issue.description,
+                      ),
                     );
                   },
                 ),

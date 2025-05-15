@@ -2,7 +2,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/issue_model.dart'; // Ensure this model is created
-
+import '../models/comment_model.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final User? _currentUser = FirebaseAuth.instance.currentUser;
@@ -72,5 +72,40 @@ class FirestoreService {
         'voters': currentVoters,
       });
     });
+  }
+
+  // Add a new comment to an issue
+  Future<void> addComment(String issueId, String text) async {
+    if (_currentUser == null) {
+      throw Exception("User not logged in.");
+    }
+
+    final comment = Comment(
+      id: '', // Will be set by Firestore
+      text: text,
+      userId: _currentUser.uid,
+      username: _currentUser.displayName ?? 'Anonymous',
+      timestamp: DateTime.now(),
+    );
+
+    // Add comment to Firestore
+    await _db.collection('issues').doc(issueId).collection('comments').add(comment.toMap());
+
+    // Update comment count on the issue
+    await _db.collection('issues').doc(issueId).update({
+      'commentsCount': FieldValue.increment(1),
+    });
+  }
+
+  Stream<List<Comment>> getCommentsStream(String issueId) {
+    return _db
+        .collection('issues')
+        .doc(issueId)
+        .collection('comments')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Comment.fromFirestore(doc.data(), doc.id))
+            .toList());
   }
 }
