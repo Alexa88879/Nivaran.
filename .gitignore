@@ -85,6 +85,7 @@ launch.json
 settings.json
 
 # Android
+android/app/google-services.json
 android/app/build/
 android/build/
 android/.gradle/
