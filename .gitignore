@@ -154,7 +154,7 @@ web/.dart_tool/
 # If your version_hosting/public/ directory contains build artifacts from another process
 # (e.g., a separate web build for hosting), you might ignore its contents or specific subfolders.
 # Example:
-# version_hosting/public/build/
+version_hosting
 # version_hosting/public/flutter_assets/
 
 # Firebase related (google-services.json is usually committed for client apps,
