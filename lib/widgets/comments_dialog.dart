@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../models/comment_model.dart';
@@ -64,17 +63,7 @@ class _CommentsDialogState extends State<CommentsDialog> {
     }
   }
 
-  String _formatTimestamp(Timestamp timestamp) {
-    final now = DateTime.now();
-    final dateTime = timestamp.toDate();
-    final difference = now.difference(dateTime);
-
-    if (difference.inMinutes < 1) return 'just now';
-    if (difference.inMinutes < 60) return '${difference.inMinutes}m';
-    if (difference.inHours < 24) return '${difference.inHours}h';
-    if (difference.inDays < 7) return '${difference.inDays}d';
-    return DateFormat('dd MMM').format(dateTime);
-  }
+  // Remove unused _formatTimestamp method since we're using DateFormat directly
 
   @override
   Widget build(BuildContext context) {
