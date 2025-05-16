@@ -80,92 +80,60 @@ class _CommentsDialogState extends State<CommentsDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
+        width: double.maxFinite,
+        padding: const EdgeInsets.all(16.0),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  const Icon(Icons.comment_outlined),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Comments',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
+            Text(
+              'Comments',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                widget.issueDescription,
-                style: Theme.of(context).textTheme.bodyMedium,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
+            const SizedBox(height: 8),
+            Text(
+              widget.issueDescription,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const Divider(height: 1),
-            Expanded(
+            const Divider(),
+            Flexible(
               child: StreamBuilder<List<Comment>>(
                 stream: _firestoreService.getCommentsStream(widget.issueId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-
+                  
                   if (snapshot.hasError) {
-                    return Center(
-                      child: Text('Error: ${snapshot.error}'),
-                    );
+                    return Center(child: Text('Error: ${snapshot.error}'));
                   }
 
                   final comments = snapshot.data ?? [];
+                  
                   if (comments.isEmpty) {
-                    return const Center(
-                      child: Text('No comments yet. Be the first to comment!'),
-                    );
+                    return const Center(child: Text('No comments yet'));
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                  return ListView.builder(
+                    shrinkWrap: true,
                     itemCount: comments.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 16),
                     itemBuilder: (context, index) {
                       final comment = comments[index];
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        child: ListTile(
+                          title: Text(comment.text),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.account_circle,
-                                  size: 24, color: Colors.grey),
-                              const SizedBox(width: 8),
+                              Text(comment.username),
                               Text(
-                                comment.username,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _formatTimestamp(Timestamp.fromDate(comment.timestamp)),
+                                DateFormat('MMM d, yyyy h:mm a').format(comment.timestamp),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(comment.text),
-                        ],
+                        ),
                       );
                     },
                   );

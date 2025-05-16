@@ -80,11 +80,21 @@ class FirestoreService {
       throw Exception("User not logged in.");
     }
 
+    // Get user data to ensure we have the username
+    final userDoc = await _db.collection('users').doc(_currentUser.uid).get();
+    String username;
+    
+    if (userDoc.exists && userDoc.data()?['username'] != null) {
+      username = userDoc.data()!['username'];
+    } else {
+      username = _currentUser.displayName ?? 'Anonymous';
+    }
+
     final comment = Comment(
       id: '', // Will be set by Firestore
       text: text,
       userId: _currentUser.uid,
-      username: _currentUser.displayName ?? 'Anonymous',
+      username: username,
       timestamp: DateTime.now(),
     );
 
@@ -107,5 +117,35 @@ class FirestoreService {
         .map((snapshot) => snapshot.docs
             .map((doc) => Comment.fromFirestore(doc.data(), doc.id))
             .toList());
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminCommentsForIssue(String issueId) async {
+    if (_currentUser == null) {
+      throw Exception("User not logged in.");
+    }
+
+    // Get user role from Firestore
+    final userDoc = await _db.collection('users').doc(_currentUser.uid).get();
+    final userRole = userDoc.data()?['role'] as String?;
+
+    if (userRole != 'admin') {
+      throw Exception("Unauthorized access");
+    }
+
+    final commentsSnapshot = await _db
+        .collection('issues')
+        .doc(issueId)
+        .collection('comments')
+        .orderBy('timestamp', descending: true)
+        .get();
+
+    return commentsSnapshot.docs.map((doc) {
+      final data = doc.data();
+      return {
+        'id': doc.id,
+        ...data,
+        'timestamp': (data['timestamp'] as Timestamp).toDate().toString(),
+      };
+    }).toList();
   }
 }
