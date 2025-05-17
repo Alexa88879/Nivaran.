@@ -21,7 +21,7 @@
 
 ## 🚀 Quick Start Guide (for Developers)
 
-### ✅ Prerequisites
+### ✅ Prerequisite
 
 Make sure you have:
 
