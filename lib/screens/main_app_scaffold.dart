@@ -29,6 +29,13 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
   void initState() {
     super.initState();
     _currentUser = FirebaseAuth.instance.currentUser;
+    
+    // This is the correct place for the update check
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        UpdateChecker.checkForUpdate(context);
+      }
+    });
     // Listen to auth state changes to update UI if user logs out from AccountScreen
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
       if (mounted) {

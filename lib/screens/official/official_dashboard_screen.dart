@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/user_profile_service.dart';
+import '../../utils/update_checker.dart';
 import '../../models/issue_model.dart'; // Using your provided Issue model
 // import '../../widgets/issue_card.dart'; // If you have this, consider using it
 import '../../services/auth_service.dart'; // For logout
@@ -14,21 +15,53 @@ class OfficialDashboardScreen extends StatefulWidget {
   const OfficialDashboardScreen({super.key});
 
   @override
-  State<OfficialDashboardScreen> createState() =>
-      _OfficialDashboardScreenState();
+  State<OfficialDashboardScreen> createState() => _OfficialDashboardScreenState();
 }
 
-class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> {
+class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with WidgetsBindingObserver {
   Stream<QuerySnapshot>? _departmentIssuesStream;
-  String? _departmentName = "Loading..."; // Initial value
-  String? _username = "Official"; // Initial value
+  String? _departmentName = "Loading...";
+  String? _username = "Official";
   int _selectedIndex = 0;
+  bool _hasCheckedUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!_hasCheckedUpdate) {
+      // Only check for updates once when the screen is first loaded
+      UpdateChecker.checkForUpdate(context);
+      _hasCheckedUpdate = true;
+    }
     _setupStream();
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Only check for updates when app is resumed and the screen is mounted
+      if (mounted && !_hasCheckedUpdate) {
+        UpdateChecker.checkForUpdate(context);
+        _hasCheckedUpdate = true;
+      }
+    } else if (state == AppLifecycleState.paused) {
+      // Reset the flag when app is paused, so it will check again when resumed
+      _hasCheckedUpdate = false;
+    }
+  }
+
 
   void _setupStream() {
     final userProfileService =

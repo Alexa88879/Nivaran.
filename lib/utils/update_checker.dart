@@ -166,7 +166,7 @@ class _DownloadProgressDialogState extends State<_DownloadProgressDialog> {
     } catch (e) {
       setState(() {
         // Updated error message to be more user-friendly
-        _error = 'Unable to download the update. Please check your internet connection and try again. or try to download from github release';
+        _error = 'Unable to download the update. Please check your internet connection and try again.If problem persist try to download from github release pages ';
         _isDownloading = false;
       });
     }

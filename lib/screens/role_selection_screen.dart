@@ -2,9 +2,50 @@
 import 'package:flutter/material.dart';
 import '../common/app_logo.dart';
 import '../widgets/auth_button.dart'; 
+import '../utils/update_checker.dart';
 
-class RoleSelectionScreen extends StatelessWidget {
+class RoleSelectionScreen extends StatefulWidget {
   const RoleSelectionScreen({super.key});
+
+  @override
+  State<RoleSelectionScreen> createState() => _RoleSelectionScreenState();
+}
+
+class _RoleSelectionScreenState extends State<RoleSelectionScreen> with WidgetsBindingObserver {
+  bool _hasCheckedUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Initial update check when screen is first created
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        UpdateChecker.checkForUpdate(context);
+        _hasCheckedUpdate = true;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_hasCheckedUpdate) {
+      // Only check for updates when app is resumed and hasn't checked yet
+      if (mounted) {
+        UpdateChecker.checkForUpdate(context);
+        _hasCheckedUpdate = true;
+      }
+    } else if (state == AppLifecycleState.paused) {
+      // Reset the flag when app is paused, so it will check again when resumed
+      _hasCheckedUpdate = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,3 +126,18 @@ class RoleSelectionScreen extends StatelessWidget {
     );
   }
 }
+
+// Widget _buildOrDivider(BuildContext context) {
+//   return Padding(
+//     padding: const EdgeInsets.symmetric(vertical: 8.0),
+//     child: Row(
+//       mainAxisAlignment: MainAxisAlignment.center,
+//       children: [
+//         Text(
+//           'or',
+//           style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+//         ),
+//       ],
+//     ),
+//   );
+// }
