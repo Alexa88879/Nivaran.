@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'feed/issues_list_screen.dart';
 import 'report/camera_capture_screen.dart'; // Entry point for reporting
 import 'profile/account_screen.dart';
+import '/utils/update_checker.dart';
 
 
 class MainAppScaffold extends StatefulWidget {
@@ -40,6 +41,8 @@ class _MainAppScaffoldState extends State<MainAppScaffold> {
         }
       }
     });
+    // Check for updates when app starts
+    UpdateChecker.checkForUpdate(context);
   }
 
 

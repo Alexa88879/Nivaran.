@@ -20,8 +20,14 @@ class LocationService {
     }
 
     try {
+      // Updated to use LocationSettings instead of deprecated desiredAccuracy
+      final LocationSettings locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 100,
+      );
+
       return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: locationSettings,
       );
     } catch (e, s) {
       developer.log('Error getting location: $e', name: 'LocationService', error: e, stackTrace: s);

@@ -74,11 +74,9 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
       if (position != null) {
         // Use geocoding to get a more detailed address
         List<Placemark> placemarks = await placemarkFromCoordinates(
-  position.latitude,
-  position.longitude,
-  localeIdentifier: 'en_US',
-);
-
+          position.latitude,
+          position.longitude,
+        );
 
         if (mounted && placemarks.isNotEmpty) {
           final Placemark place = placemarks.first;

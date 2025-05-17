@@ -61,8 +61,14 @@ class _ReportScreenState extends State<ReportScreen> {
 
     await _cameraController!.initialize();
 
+    // Updated location settings
+    final LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 100,
+    );
+
     _currentPosition = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
+      locationSettings: locationSettings,
     );
 
     if (mounted) setState(() {});
