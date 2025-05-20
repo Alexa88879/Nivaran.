@@ -7,8 +7,6 @@ import '../models/issue_model.dart';
 import '../services/firestore_service.dart';
 import '../screens/full_screen_image_view.dart';
 import '../widgets/comments_dialog.dart';
-
-// Import necessary packages for AI risk prediction
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../services/risk_prediction_service.dart';
@@ -16,7 +14,6 @@ import 'dart:developer' as developer;
 
 class IssueCard extends StatefulWidget {
   final Issue issue;
-
   const IssueCard({super.key, required this.issue});
 
   @override
@@ -26,11 +23,9 @@ class IssueCard extends StatefulWidget {
 class _IssueCardState extends State<IssueCard> {
   final FirestoreService _firestoreService = FirestoreService();
   final User? _currentUser = FirebaseAuth.instance.currentUser;
-
   VoteType? _optimisticVote;
   int _optimisticUpvotes = 0;
   int _optimisticDownvotes = 0;
-
   String? _riskPredictionText;
   bool _isFetchingRisk = false;
 
@@ -43,8 +38,7 @@ class _IssueCardState extends State<IssueCard> {
   void _updateOptimisticStateFromWidget() {
     _optimisticUpvotes = widget.issue.upvotes;
     _optimisticDownvotes = widget.issue.downvotes;
-    if (_currentUser != null &&
-        widget.issue.voters.containsKey(_currentUser.uid)) {
+    if (_currentUser != null && widget.issue.voters.containsKey(_currentUser.uid)) {
       _optimisticVote = widget.issue.voters[_currentUser.uid];
     } else {
       _optimisticVote = null;
@@ -59,14 +53,19 @@ class _IssueCardState extends State<IssueCard> {
         widget.issue.downvotes != oldWidget.issue.downvotes ||
         !_mapEquals(widget.issue.voters, oldWidget.issue.voters) ||
         widget.issue.status != oldWidget.issue.status ||
-        widget.issue.urgency != oldWidget.issue.urgency || 
-        !_listEquals(widget.issue.tags, oldWidget.issue.tags) 
-        ) {
-      setState(() {
+        widget.issue.urgency != oldWidget.issue.urgency ||
+        !_listEquals(widget.issue.tags, oldWidget.issue.tags)) {
+      setStateIfMounted(() { // Use helper
         _updateOptimisticStateFromWidget();
         _riskPredictionText = null;
         _isFetchingRisk = false;
       });
+    }
+  }
+
+  void setStateIfMounted(VoidCallback f) {
+    if (mounted) {
+      setState(f);
     }
   }
 
@@ -100,12 +99,10 @@ class _IssueCardState extends State<IssueCard> {
     return true;
   }
 
-
   String _formatTimestamp(Timestamp timestamp) {
     final dateTime = timestamp.toDate();
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-
     if (difference.inMinutes < 1) {
       return 'just now';
     }
@@ -125,11 +122,14 @@ class _IssueCardState extends State<IssueCard> {
     switch (status.toLowerCase()) {
       case 'resolved':
         return Colors.green.shade50;
-      case 'addressed':
+      case 'in progress': 
+      case 'acknowledged': 
         return Colors.orange.shade50;
+      case 'rejected':
+        return Colors.red.shade100; 
       case 'reported':
       default:
-        return Colors.red.shade50;
+        return Colors.blue.shade50; 
     }
   }
 
@@ -137,11 +137,14 @@ class _IssueCardState extends State<IssueCard> {
     switch (status.toLowerCase()) {
       case 'resolved':
         return Colors.green.shade700;
-      case 'addressed':
+      case 'in progress':
+      case 'acknowledged':
         return Colors.orange.shade700;
+      case 'rejected':
+        return Colors.red.shade700;
       case 'reported':
       default:
-        return Colors.red.shade700;
+        return Colors.blue.shade700; 
     }
   }
 
@@ -149,84 +152,80 @@ class _IssueCardState extends State<IssueCard> {
     switch (status.toLowerCase()) {
       case 'resolved':
         return Icons.check_circle_outline_rounded;
-      case 'addressed':
-        return Icons.task_alt_rounded;
+      case 'in progress':
+        return Icons.hourglass_top_rounded; 
+      case 'acknowledged':
+        return Icons.visibility_outlined; 
+      case 'rejected':
+        return Icons.cancel_outlined;
       case 'reported':
       default:
-        return Icons.error_outline_rounded;
+        return Icons.report_problem_outlined; 
     }
   }
 
   Color _getUrgencyColor(String? urgency) {
     switch (urgency?.toLowerCase()) {
-      case 'high':
-        return Colors.red.shade600;
-      case 'medium':
-        return Colors.orange.shade600;
-      case 'low':
-        return Colors.blue.shade600;
-      default:
-        return Colors.grey.shade500;
+      case 'high': return Colors.red.shade600;
+      case 'medium': return Colors.orange.shade600;
+      case 'low': return Colors.blue.shade600;
+      default: return Colors.grey.shade500;
     }
   }
 
   Future<void> _handleVote(VoteType voteType) async {
     if (_currentUser == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You need to be logged in to vote.')),
-        );
+      // This check is before any await, so context should be fine.
+      // However, good practice to check mounted if any doubt.
+      if (mounted) { 
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You need to be logged in to vote.')));
       }
       return;
     }
 
     final String userId = _currentUser.uid;
-    int previousOptimisticUpvotes = _optimisticUpvotes;
-    int previousOptimisticDownvotes = _optimisticDownvotes;
-    VoteType? previousOptimisticVote = _optimisticVote;
+    // Store current state for potential rollback
+    final VoteType? previousOptimisticVote = _optimisticVote;
+    final int previousOptimisticUpvotes = _optimisticUpvotes;
+    final int previousOptimisticDownvotes = _optimisticDownvotes;
 
+    // Optimistically update UI
+    VoteType? newLocalVoteState;
     int newOptimisticUpvotes = _optimisticUpvotes;
     int newOptimisticDownvotes = _optimisticDownvotes;
-    VoteType? newLocalVoteState;
 
-    if (_optimisticVote == voteType) {
+    if (_optimisticVote == voteType) { // Clicking the same vote type (un-voting)
       newLocalVoteState = null;
-      if (voteType == VoteType.upvote) { // FIX: Added curly braces
-        newOptimisticUpvotes--;
-      } else { // FIX: Added curly braces
-        newOptimisticDownvotes--;
-      }
-    } else {
+      if (voteType == VoteType.upvote) {newOptimisticUpvotes--;} 
+      else {newOptimisticDownvotes--;}
+    } else { // New vote or changing vote
       newLocalVoteState = voteType;
-      if (_optimisticVote == VoteType.upvote) { // FIX: Added curly braces
-        newOptimisticUpvotes--;
-      }
-      if (_optimisticVote == VoteType.downvote) { // FIX: Added curly braces
-        newOptimisticDownvotes--;
-      }
-      if (voteType == VoteType.upvote) {
-        newOptimisticUpvotes++;
-      } else {
-        newOptimisticDownvotes++;
-      }
+      // Decrement previous vote if exists
+      if (_optimisticVote == VoteType.upvote) {newOptimisticUpvotes--;}
+      if (_optimisticVote == VoteType.downvote) {newOptimisticDownvotes--;}
+      // Increment new vote
+      if (voteType == VoteType.upvote) {newOptimisticUpvotes++;} 
+      else {newOptimisticDownvotes++;}
     }
 
-    if (mounted) {
-      setState(() {
-        _optimisticVote = newLocalVoteState;
-        _optimisticUpvotes = newOptimisticUpvotes.clamp(0, 999999);
-        _optimisticDownvotes = newOptimisticDownvotes.clamp(0, 999999);
-      });
-    }
+    setStateIfMounted(() {
+      _optimisticVote = newLocalVoteState;
+      _optimisticUpvotes = newOptimisticUpvotes.clamp(0, 999999);
+      _optimisticDownvotes = newOptimisticDownvotes.clamp(0, 999999);
+    });
 
     try {
       await _firestoreService.voteIssue(widget.issue.id, userId, voteType);
+      // If successful, optimistic UI is already correct.
     } catch (e) {
-      if (mounted) {
-        setState(() {
+      developer.log("Error voting: $e", name: "IssueCard");
+      // Rollback optimistic UI update if Firestore write fails
+      // Check if the widget is still in the tree before calling setState or ScaffoldMessenger
+      if (mounted) { 
+        setState(() { // No need for setStateIfMounted here as it's already inside if(mounted)
+          _optimisticVote = previousOptimisticVote;
           _optimisticUpvotes = previousOptimisticUpvotes;
           _optimisticDownvotes = previousOptimisticDownvotes;
-          _optimisticVote = previousOptimisticVote;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to register vote: ${e.toString()}')),
@@ -238,37 +237,30 @@ class _IssueCardState extends State<IssueCard> {
   Future<void> _fetchAndDisplayRiskPrediction(String imageUrl) async {
     if (imageUrl.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image not available for risk prediction.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image not available for risk prediction.')));
       }
       return;
     }
-    if (mounted) {
-      setState(() => _isFetchingRisk = true);
-    }
+    setStateIfMounted(() => _isFetchingRisk = true);
+    
     try {
       final http.Response imageResponse = await http.get(Uri.parse(imageUrl));
+      if (!mounted) return; // Check after await
+
       if (imageResponse.statusCode == 200) {
         final Uint8List imageBytes = imageResponse.bodyBytes;
         final String? prediction = await RiskPredictionService.getRiskPredictionFromImage(imageBytes);
-        if (mounted) {
-          setState(() => _riskPredictionText = prediction ?? "No specific risks identified or unable to analyze.");
-        }
+        if (!mounted) return; // Check after await
+        setState(() => _riskPredictionText = prediction ?? "No specific risks identified or unable to analyze.");
+        
       } else {
-        if (mounted) {
-          setState(() => _riskPredictionText = "Failed to load image (Error: ${imageResponse.statusCode}).");
-        }
+        setStateIfMounted(() => _riskPredictionText = "Failed to load image (Error: ${imageResponse.statusCode}).");
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _riskPredictionText = "Error predicting risk. Please try again.");
-      }
       developer.log("Error fetching risk prediction: $e", name: "IssueCard");
+      setStateIfMounted(() => _riskPredictionText = "Error predicting risk. Please try again.");
     } finally {
-      if (mounted) {
-        setState(() => _isFetchingRisk = false);
-      }
+      setStateIfMounted(() => _isFetchingRisk = false);
     }
   }
 
@@ -307,7 +299,7 @@ class _IssueCardState extends State<IssueCard> {
           if (_riskPredictionText != null && !_isFetchingRisk)
             Padding(
               padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 6.0),
-              child: Text(_riskPredictionText!, style: textTheme.bodySmall?.copyWith(color: Colors.black.withAlpha((0.75 * 255).round()), fontSize: 12.5, fontStyle: FontStyle.italic), maxLines: 4, overflow: TextOverflow.ellipsis), // FIX: withOpacity to withAlpha
+              child: Text(_riskPredictionText!, style: textTheme.bodySmall?.copyWith(color: Colors.black.withAlpha((0.75 * 255).round()), fontSize: 12.5, fontStyle: FontStyle.italic), maxLines: 4, overflow: TextOverflow.ellipsis),
             ),
         ],
       ),
@@ -323,7 +315,7 @@ class _IssueCardState extends State<IssueCard> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
       elevation: 1.5,
-      shadowColor: Colors.grey.withAlpha((0.2 * 255).round()), // FIX: withOpacity to withAlpha
+      shadowColor: Colors.grey.withAlpha((0.2 * 255).round()),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       color: Colors.white,
       child: Padding(
@@ -361,23 +353,21 @@ class _IssueCardState extends State<IssueCard> {
               ],
             ),
             SizedBox(height: widget.issue.description.isNotEmpty ? 8 : 4),
-
             if (widget.issue.description.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 4.0), 
-                child: Text(widget.issue.description, style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha((0.8 * 255).round())), maxLines: 3, overflow: TextOverflow.ellipsis), // FIX: withOpacity to withAlpha
+                padding: const EdgeInsets.only(bottom: 4.0),
+                child: Text(widget.issue.description, style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha((0.8 * 255).round())), maxLines: 3, overflow: TextOverflow.ellipsis),
               ),
-            
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4.0),
-              child: Wrap( 
-                spacing: 6.0, 
-                runSpacing: 4.0, 
+              child: Wrap(
+                spacing: 6.0,
+                runSpacing: 4.0,
                 children: [
                   Chip(
                     avatar: Icon(Icons.category_outlined, size: 14, color: Theme.of(context).colorScheme.secondary),
                     label: Text(widget.issue.category, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.w500)),
-                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer.withAlpha((0.3 * 255).round()), // FIX: withOpacity to withAlpha
+                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer.withAlpha((0.3 * 255).round()),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -385,12 +375,12 @@ class _IssueCardState extends State<IssueCard> {
                     Chip(
                       avatar: Icon(Icons.priority_high_rounded, size: 14, color: _getUrgencyColor(widget.issue.urgency)),
                       label: Text(widget.issue.urgency!, style: TextStyle(fontSize: 11, color: _getUrgencyColor(widget.issue.urgency), fontWeight: FontWeight.w500)),
-                      backgroundColor: _getUrgencyColor(widget.issue.urgency).withAlpha((0.1 * 255).round()), // FIX: withOpacity to withAlpha
+                      backgroundColor: _getUrgencyColor(widget.issue.urgency).withAlpha((0.1 * 255).round()),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   if (widget.issue.tags != null && widget.issue.tags!.isNotEmpty)
-                    ...widget.issue.tags!.map((tag) => Chip( // FIX: Removed .toList()
+                    ...widget.issue.tags!.map((tag) => Chip(
                           label: Text(tag, style: TextStyle(fontSize: 10, color: Colors.grey[700])),
                           backgroundColor: Colors.grey[200],
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -399,8 +389,6 @@ class _IssueCardState extends State<IssueCard> {
                 ],
               ),
             ),
-
-
             if (widget.issue.location.address.isNotEmpty)
               Row(
                 children: [
@@ -410,7 +398,6 @@ class _IssueCardState extends State<IssueCard> {
                 ],
               ),
             SizedBox(height: widget.issue.imageUrl.isNotEmpty ? 12 : 8),
-
             if (widget.issue.imageUrl.isNotEmpty)
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageView(imageUrl: widget.issue.imageUrl))),
@@ -432,10 +419,8 @@ class _IssueCardState extends State<IssueCard> {
                   ),
                 ),
               ),
-            
             if (widget.issue.imageUrl.isNotEmpty) _buildRiskPredictionSection(),
             const SizedBox(height: 10),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
@@ -461,7 +446,6 @@ class _ActionChipButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isActive;
   final Color? activeColor;
-
   const _ActionChipButton({required this.icon, required this.label, required this.onTap, this.isActive = false, this.activeColor});
 
   @override
@@ -469,8 +453,8 @@ class _ActionChipButton extends StatelessWidget {
     const Color defaultColorForElements = Colors.black54;
     final Color effectiveIconColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
     final Color effectiveTextColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
-    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha((0.7 * 255).round()) : Colors.grey[350]!; // FIX: withOpacity to withAlpha
-    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha((0.08 * 255).round()) : Colors.transparent; // FIX: withOpacity to withAlpha
+    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha((0.7 * 255).round()) : Colors.grey[350]!;
+    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha((0.08 * 255).round()) : Colors.transparent;
 
     return InkWell(
       onTap: onTap,

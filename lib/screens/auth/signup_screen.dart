@@ -52,52 +52,56 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final userProfileService = Provider.of<UserProfileService>(context, listen: false);
+// Removed unused userProfileService variable
     final String username = _usernameController.text.trim();
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
 
     try {
-      
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      if (userCredential.user != null) {
+      User? firebaseUser = userCredential.user;
+
+      if (firebaseUser != null) {
+        try {
+          await firebaseUser.sendEmailVerification();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Verification email sent! Please check your inbox.')),
+            );
+          }
+        } catch (e) {
+          developer.log("Error sending verification email: $e", name: "SignUpScreen");
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not send verification email: ${e.toString()}')),
+            );
+          }
+        }
+
         AppUser newUser = AppUser(
-          uid: userCredential.user!.uid,
+          uid: firebaseUser.uid,
           email: email,
-          username: username, // This is the 'Username' field from PDF Page 3
-          fullName: username, // For citizen, username can serve as full name initially
+          username: username,
+          fullName: username, 
           role: 'user',
           createdAt: Timestamp.now(),
-          // Other fields like mobileNo, employeeId are null for citizen signup via this form
         );
 
         await FirebaseFirestore.instance
             .collection('users')
             .doc(newUser.uid)
             .set(newUser.toMap());
+        
+        // No need to call fetchAndSetCurrentUserProfile here, as the user is not fully active yet.
+        // The VerifyEmailScreen or InitialAuthCheck will handle profile loading after verification.
 
         if (mounted) {
-          // After creating the user and their Firestore doc, fetch the full profile
-          await userProfileService.fetchAndSetCurrentUserProfile();
-          if (userProfileService.currentUserProfile != null) {
-            if (mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/app', (Route<dynamic> route) => false);
-            }
-          } else {
-            // This should ideally not happen if fetch is successful after doc creation
-            developer.log("SignupScreen: Profile not loaded after creating user doc.", name: "SignUpScreen");
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Account created, but profile failed to load. Please try logging in.")),
-            );
-            if (mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
-            }
-          }
+          // Navigate to the Verify Email Screen
+          Navigator.of(context).pushNamedAndRemoveUntil('/verify_email_screen', (route) => false);
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -129,8 +133,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   String? _validateUsername(String? value) {
     if (value == null || value.trim().isEmpty) return 'Please enter a username.';
     if (value.trim().length < 3) return 'Username must be at least 3 characters.';
-    // Example: Allow alphanumeric and underscore, no spaces
-    // if (!RegExp(r"^[a-zA-Z0-9_]+$").hasMatch(value.trim())) return 'Username can only contain letters, numbers, and underscores.';
     return null;
   }
 
@@ -166,7 +168,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const AppLogo(logoSymbolSize: 28, showAppName: false), // "N" logo
+        title: const AppLogo(logoSymbolSize: 28, showAppName: false), 
         centerTitle: true,
       ),
       body: SafeArea(
@@ -181,13 +183,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 children: <Widget>[
                   SizedBox(height: screenHeight * 0.03),
                   Text(
-                    'Create your account', // PDF Page 3 Title
+                    'Create your account', 
                     textAlign: TextAlign.center,
                     style: textTheme.headlineMedium?.copyWith(fontSize: 26),
                   ),
                   SizedBox(height: screenHeight * 0.015),
                   Text(
-                    // Subtitle adjusted as Google sign-in is removed for this screen
                     'Sign up with your email', 
                     textAlign: TextAlign.center,
                     style: textTheme.bodyMedium?.copyWith(fontSize: 15, color: Colors.grey[600]),
@@ -196,7 +197,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   CustomTextField(
                     controller: _usernameController,
                     hintText: 'Username', 
-                    prefixIconData: Icons.person_outline, // Icon next to label (field hint)
+                    prefixIconData: Icons.person_outline, 
                     keyboardType: TextInputType.text,
                     textCapitalization: TextCapitalization.words,
                     validator: _validateUsername,
@@ -240,7 +241,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     isLoading: _isLoading,
                   ),
                   SizedBox(height: screenHeight * 0.03),
-                  // "or" and "Continue with Google" are REMOVED for Citizen Signup
                   Padding(
                      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 20.0),
                      child: Text.rich(

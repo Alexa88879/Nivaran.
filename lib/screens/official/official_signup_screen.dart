@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../common/app_logo.dart';
 import '../../models/app_user_model.dart';
-import '../../services/user_profile_service.dart';
+import '../../services/user_profile_service.dart'; // Keep for potential future use, though not directly used in _signUpOfficial now
 import '../../widgets/auth_button.dart';
 import '../../widgets/custom_text_field.dart';
 import 'dart:developer' as developer;
@@ -61,10 +61,12 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
-    final userProfileService = Provider.of<UserProfileService>(context, listen: false);
+    // UserProfileService is not directly used here for profile fetching after signup,
+    // as that will happen after email verification and potentially details entry.
+    // final userProfileService = Provider.of<UserProfileService>(context, listen: false); 
     final String fullName = _fullNameController.text.trim();
     final String email = _officialEmailController.text.trim();
-    final String password = _passwordController.text.trim(); // Password collected here
+    final String password = _passwordController.text.trim(); 
     final String mobileNo = _mobileNoController.text.trim();
     final String employeeId = _employeeIdController.text.trim();
 
@@ -74,16 +76,21 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
         password: password,
       );
 
-      if (userCredential.user != null) {
+      User? firebaseUser = userCredential.user;
+
+      if (firebaseUser != null) {
+        // DO NOT send verification email here. It will be sent after OfficialDetailsEntryScreen.
+
         AppUser newOfficialUser = AppUser(
-          uid: userCredential.user!.uid,
+          uid: firebaseUser.uid,
           email: email,
-          username: fullName, // Use full name as initial username for display
+          username: fullName, 
           fullName: fullName,
           mobileNo: mobileNo,
           employeeId: employeeId,
-          role: 'official', // Initial role for admin verification
+          role: 'official', 
           createdAt: Timestamp.now(),
+          // Other fields like designation, department will be added in the next screen
         );
 
         await FirebaseFirestore.instance
@@ -91,11 +98,11 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
             .doc(newOfficialUser.uid)
             .set(newOfficialUser.toMap());
         
-
-        await userProfileService.fetchAndSetCurrentUserProfile();
+        // No need to call fetchAndSetCurrentUserProfile here.
+        // The user is created, now they need to enter more details.
 
         if (mounted) {
-
+          // Navigate to the Official Details Entry Screen
           Navigator.of(context).pushReplacementNamed('/official_details_entry');
         }
       }
@@ -140,7 +147,6 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
   }
    String? _validateMobile(String? value) {
     if (value == null || value.trim().isEmpty) return 'Mobile number is required.';
-    // Basic 10-14 digit mobile number validation, can be country-specific
     if (!RegExp(r"^\+?[0-9]{10,14}$").hasMatch(value.trim())) return 'Enter a valid mobile number.';
     return null;
   }
@@ -183,20 +189,20 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
                 children: <Widget>[
                   SizedBox(height: screenHeight * 0.02),
                   Text(
-                    'Official Sign up', // PDF Page 6 Title
+                    'Official Sign up', 
                     textAlign: TextAlign.center,
                     style: textTheme.headlineMedium?.copyWith(fontSize: 26),
                   ),
                   SizedBox(height: screenHeight * 0.01),
                   Text(
-                    'Enter your details for sign up', // PDF Page 6 Subtitle
+                    'Enter your details for sign up', 
                     textAlign: TextAlign.center,
                     style: textTheme.bodyMedium?.copyWith(fontSize: 15, color: Colors.grey[600]),
                   ),
                   SizedBox(height: screenHeight * 0.04),
                   CustomTextField(
                     controller: _fullNameController,
-                    hintText: 'full name', // Matches PDF placeholder
+                    hintText: 'full name', 
                     textCapitalization: TextCapitalization.words,
                     validator: _validateFullName,
                     focusNode: _fullNameFocusNode,
@@ -249,7 +255,7 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
                   ),
                   SizedBox(height: screenHeight * 0.04),
                   AuthButton(
-                    text: 'Submit', // Matches PDF Page 6 button text
+                    text: 'Continue to Details', // Changed button text
                     onPressed: _signUpOfficial,
                     isLoading: _isLoading,
                   ),
@@ -258,7 +264,7 @@ class _OfficialSignupScreenState extends State<OfficialSignupScreen> {
                      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 15.0),
                      child: Text.rich(
                         TextSpan(
-                          text: 'By clicking submit, you confirm you are an authorized government employee and agree to our ',
+                          text: 'By clicking continue, you confirm you are an authorized government employee and agree to our ',
                           style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                           children: <TextSpan>[
                             TextSpan(

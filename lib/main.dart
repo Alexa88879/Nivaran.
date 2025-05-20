@@ -9,6 +9,7 @@ import 'screens/role_selection_screen.dart';
 import 'screens/auth/auth_options_screen.dart';
 import 'screens/auth/login_screen.dart';    
 import 'screens/auth/signup_screen.dart';   
+import 'screens/auth/verify_email_screen.dart'; 
 import 'screens/official/official_login_screen.dart';
 import 'screens/official/official_signup_screen.dart';
 import 'screens/official/official_details_entry_screen.dart';
@@ -16,7 +17,7 @@ import 'screens/official/official_set_password_screen.dart';
 import 'screens/official/official_dashboard_screen.dart'; 
 import 'screens/main_app_scaffold.dart'; 
 import 'screens/public_dashboard_screen.dart';
-
+import 'dart:developer' as developer; // For logging
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,8 +58,8 @@ class MyApp extends StatelessWidget {
         appBarTheme: AppBarTheme(
           backgroundColor: Colors.white,
           elevation: 0, 
-          iconTheme: const IconThemeData(color: Colors.black, size: 20), // Standardize icon size
-          titleTextStyle: appTextTheme.titleLarge?.copyWith(fontSize: 18), // Slightly smaller AppBar title
+          iconTheme: const IconThemeData(color: Colors.black, size: 20), 
+          titleTextStyle: appTextTheme.titleLarge?.copyWith(fontSize: 18), 
           centerTitle: true,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
@@ -66,7 +67,7 @@ class MyApp extends StatelessWidget {
             backgroundColor: Colors.black,
             foregroundColor: Colors.white,
             textStyle: appTextTheme.labelLarge?.copyWith(letterSpacing: 0.5, color: Colors.white),
-            minimumSize: const Size(double.infinity, 50), // PDF buttons are slightly less tall
+            minimumSize: const Size(double.infinity, 50), 
             padding: const EdgeInsets.symmetric(vertical: 12), 
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10.0), 
@@ -91,7 +92,7 @@ class MyApp extends StatelessWidget {
            fillColor: Colors.grey[100], 
            contentPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0), 
            border: OutlineInputBorder(
-             borderRadius: BorderRadius.circular(8.0), // Less rounded for text fields
+             borderRadius: BorderRadius.circular(8.0), 
              borderSide: BorderSide(color: Colors.grey[300]!, width: 1.0),
            ),
            enabledBorder: OutlineInputBorder(
@@ -110,12 +111,12 @@ class MyApp extends StatelessWidget {
              borderRadius: BorderRadius.circular(8.0),
              borderSide: BorderSide(color: Colors.red.shade600, width: 1.5),
            ),
-           prefixIconColor: Colors.grey[700], // Default color for prefix icons if used
+           prefixIconColor: Colors.grey[700], 
         ),
         textTheme: appTextTheme,
         visualDensity: VisualDensity.adaptivePlatformDensity,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal).copyWith(
-          secondary: Colors.teal, // Using teal as accent more consistently
+          secondary: Colors.teal, 
           surface: Colors.white,
         ),
       ),
@@ -130,6 +131,7 @@ class MyApp extends StatelessWidget {
         
         '/login': (context) => const LoginScreen(),
         '/signup': (context) => const SignUpScreen(),
+        '/verify_email_screen': (context) => const VerifyEmailScreen(), 
 
         '/official_login': (context) => const OfficialLoginScreen(),
         '/official_signup': (context) => const OfficialSignupScreen(),
@@ -150,22 +152,86 @@ class InitialAuthCheck extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-        return Consumer<UserProfileService>(
-      builder: (context, userProfileService, child) {
-        final authUser = FirebaseAuth.instance.currentUser;
-
-        if (userProfileService.isLoadingProfile && authUser != null) {
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator(semanticsLabel: "Loading session...")));
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnapshot) {
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator(semanticsLabel: "Auth check...")));
         }
-        if (userProfileService.currentUserProfile != null && authUser != null) {
-       
-          if (userProfileService.currentUserProfile!.isOfficial) {
-            return const OfficialDashboardScreen();
-          }
-          return const MainAppScaffold(); // Citizen
+
+        final User? authUser = authSnapshot.data;
+
+        if (authUser != null) { // User is logged in via Firebase Auth
+          return Consumer<UserProfileService>(
+            builder: (context, userProfileService, child) {
+              // Trigger profile fetch if not already loading or loaded for this user
+              if (userProfileService.currentUserProfile?.uid != authUser.uid && !userProfileService.isLoadingProfile) {
+                 developer.log("InitialAuthCheck: Auth user exists, fetching profile for ${authUser.uid}", name: "InitialAuthCheck");
+                 // Don't await here, let the UI update reactively
+                 WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) { // Ensure context is still valid
+                        userProfileService.fetchAndSetCurrentUserProfile();
+                    }
+                 });
+              }
+
+              if (userProfileService.isLoadingProfile && userProfileService.currentUserProfile == null) {
+                developer.log("InitialAuthCheck: Profile is loading...", name: "InitialAuthCheck");
+                return const Scaffold(body: Center(child: CircularProgressIndicator(semanticsLabel: "Loading profile...")));
+              }
+              
+              // Check email verification status AFTER profile service has had a chance to load
+              if (!authUser.emailVerified) {
+                developer.log("InitialAuthCheck: User ${authUser.uid} email not verified. Navigating to /verify_email_screen", name: "InitialAuthCheck");
+                // Use WidgetsBinding to schedule navigation after build
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (ModalRoute.of(context)?.settings.name != '/verify_email_screen' && context.mounted) {
+                     Navigator.of(context).pushNamedAndRemoveUntil('/verify_email_screen', (route) => false);
+                  }
+                });
+                // Return a placeholder while navigation occurs to prevent flicker
+                return const Scaffold(body: Center(child: Text("Redirecting to email verification...")));
+              }
+
+              // Email is verified, now check role from loaded profile
+              if (userProfileService.currentUserProfile != null) {
+                developer.log("InitialAuthCheck: Profile loaded. Role: ${userProfileService.currentUserProfile!.role}", name: "InitialAuthCheck");
+                if (userProfileService.currentUserProfile!.isOfficial) {
+                  // For officials, also check if they have completed details entry
+                  if (userProfileService.currentUserProfile!.department == null || 
+                      userProfileService.currentUserProfile!.department!.isEmpty) {
+                    developer.log("InitialAuthCheck: Official profile department is null/empty. Navigating to /official_details_entry", name: "InitialAuthCheck");
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                       if (ModalRoute.of(context)?.settings.name != '/official_details_entry' && context.mounted) {
+                           Navigator.of(context).pushNamedAndRemoveUntil('/official_details_entry', (route) => false);
+                       }
+                    });
+                    return const Scaffold(body: Center(child: Text("Completing official profile...")));
+                  }
+                  developer.log("InitialAuthCheck: Navigating to /official_dashboard", name: "InitialAuthCheck");
+                  return const OfficialDashboardScreen();
+                }
+                developer.log("InitialAuthCheck: Navigating to /app (citizen)", name: "InitialAuthCheck");
+                return const MainAppScaffold(); // Citizen
+              } else {
+                // This case means authUser exists, email is verified, but profile is still null after attempting to load.
+                // This could be a transient state or an error in profile loading.
+                developer.log("InitialAuthCheck: Auth user verified, but profile is null. Showing loading/error.", name: "InitialAuthCheck");
+                return const Scaffold(body: Center(child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text("Loading user data..."),
+                    SizedBox(height:10),
+                    CircularProgressIndicator()
+                  ],
+                )));
+              }
+            },
+          );
         }
         
+        // No authenticated user
+        developer.log("InitialAuthCheck: No authenticated user. Navigating to /role_selection", name: "InitialAuthCheck");
         return const RoleSelectionScreen();
       },
     );

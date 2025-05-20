@@ -11,6 +11,7 @@ import '../../services/user_profile_service.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/auth_button.dart';
 import '../../models/app_user_model.dart';
+import '../../models/category_model.dart'; // <<--- NEW IMPORT
 import 'dart:developer' as developer;
 
 class ReportDetailsScreen extends StatefulWidget {
@@ -23,24 +24,19 @@ class ReportDetailsScreen extends StatefulWidget {
 
 class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _tagsController = TextEditingController(); // For tags input
+  final TextEditingController _tagsController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  bool _isLoadingData = true;
+  bool _isLoadingInitialData = true; // Combined loading state
   bool _isSubmitting = false;
   Position? _currentPosition;
   String? _currentAddress;
 
-  String? _selectedCategory;
-  final List<String> _categories = [
-    'Pothole', 'Street Light Out', 'Waste Missed',
-    'Water Leakage', 'Damaged Signage', 'Fallen Tree',
-    'Illegal Dumping', 'Blocked Drain', 'Public Property Vandalism', 'Other'
-  ];
+  List<CategoryModel> _fetchedCategories = []; // <<--- CHANGED: Store CategoryModel
+  CategoryModel? _selectedCategoryModel; // <<--- CHANGED: Store selected CategoryModel
 
-  String? _selectedUrgency; // For urgency dropdown
+  String? _selectedUrgency;
   final List<String> _urgencyLevels = ['Low', 'Medium', 'High'];
-
 
   final LocationService _locationService = LocationService();
   final ImageUploadService _imageUploadService = ImageUploadService();
@@ -49,51 +45,41 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchLocationDetails();
+    _fetchInitialData();
   }
 
-  Future<void> _fetchLocationDetails() async {
+  Future<void> _fetchInitialData() async {
     if (!mounted) return;
-    setState(() => _isLoadingData = true);
+    setState(() => _isLoadingInitialData = true);
     try {
+      // Fetch location
       _currentPosition = await _locationService.getCurrentPosition();
       if (mounted && _currentPosition != null) {
         _currentAddress = await _locationService.getAddressFromCoordinates(
             _currentPosition!.latitude, _currentPosition!.longitude);
       }
+
+      // Fetch categories
+      _fetchedCategories = await _firestoreService.fetchIssueCategories();
+      if (_fetchedCategories.isEmpty && mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load issue categories. Please try again later.')),
+        );
+      }
+
     } catch (e) {
-      developer.log('Error fetching location details: ${e.toString()}', name: 'ReportDetailsScreen');
+      developer.log('Error fetching initial data: ${e.toString()}', name: 'ReportDetailsScreen');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error fetching location: ${e.toString().characters.take(100)}...')),
+          SnackBar(content: Text('Error loading details: ${e.toString().characters.take(100)}...')),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoadingData = false);
+      if (mounted) setState(() => _isLoadingInitialData = false);
     }
   }
 
-  String? _getDepartmentForCategory(String? category) {
-    if (category == null) return null;
-    switch (category) {
-      case 'Pothole':
-      case 'Damaged Signage':
-      case 'Fallen Tree':
-        return 'Road Maintenance Dept.';
-      case 'Street Light Out':
-        return 'Electricity Dept.';
-      case 'Waste Missed':
-      case 'Illegal Dumping':
-        return 'Sanitation Dept.';
-      case 'Water Leakage':
-      case 'Blocked Drain':
-        return 'Water Supply Dept.';
-      case 'Public Property Vandalism':
-        return 'Public Safety / Police';
-      default:
-        return 'General Grievances';
-    }
-  }
+  // REMOVED: _getDepartmentForCategory function, as it's now part of CategoryModel
 
   Future<void> _submitReport() async {
     final userProfileService = Provider.of<UserProfileService>(context, listen: false);
@@ -101,7 +87,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
 
     if (!_formKey.currentState!.validate()) return;
     
-    if (_selectedCategory == null) {
+    if (_selectedCategoryModel == null) { // <<--- CHANGED: Check _selectedCategoryModel
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please select a category for the issue.')),
@@ -109,18 +95,8 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
       return;
     }
-    // Urgency is optional, so no specific check here unless you make it mandatory
-    // if (_selectedUrgency == null) {
-    //   if (mounted) {
-    //     ScaffoldMessenger.of(context).showSnackBar(
-    //       const SnackBar(content: Text('Please select an urgency level.')),
-    //     );
-    //   }
-    //   return;
-    // }
 
-
-    if (_currentPosition == null) {
+    if (_currentPosition == null) { /* ... (existing checks) ... */ 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Location not available. Please try again.')),
@@ -128,7 +104,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
       return;
     }
-    if (appUser == null) {
+    if (appUser == null) { /* ... (existing checks) ... */
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('User not authenticated. Please log in again.')),
@@ -136,7 +112,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
       return;
     }
-    if (appUser.username == null || appUser.username!.isEmpty) {
+     if (appUser.username == null || appUser.username!.isEmpty) { /* ... (existing checks) ... */
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Username not found. Please update your profile or re-login.')),
@@ -144,6 +120,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
       return;
     }
+
 
     if (!mounted) return;
     setState(() => _isSubmitting = true);
@@ -154,9 +131,9 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         throw Exception('Failed to upload image.');
       }
 
-      final String? assignedDepartment = _getDepartmentForCategory(_selectedCategory);
+      // <<--- CHANGED: Get department from selected category model
+      final String assignedDepartment = _selectedCategoryModel!.defaultDepartment; 
       
-      // Process tags: split by comma, trim whitespace, remove empty tags
       final List<String> tagsList = _tagsController.text.split(',')
           .map((tag) => tag.trim())
           .where((tag) => tag.isNotEmpty)
@@ -164,9 +141,9 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
 
       final Map<String, dynamic> issueData = {
         'description': _descriptionController.text.trim(),
-        'category': _selectedCategory!,
-        'urgency': _selectedUrgency, // Can be null if not selected
-        'tags': tagsList.isNotEmpty ? tagsList : null, // Store as list, or null if empty
+        'category': _selectedCategoryModel!.name, // <<--- CHANGED: Use name from model
+        'urgency': _selectedUrgency,
+        'tags': tagsList.isNotEmpty ? tagsList : null,
         'imageUrl': imageUrl,
         'timestamp': FieldValue.serverTimestamp(),
         'location': {
@@ -178,7 +155,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         'username': appUser.username!,
         'status': 'Reported',
         'isUnresolved': true,
-        'assignedDepartment': assignedDepartment,
+        'assignedDepartment': assignedDepartment, // <<--- USING DYNAMIC VALUE
         'upvotes': 0,
         'downvotes': 0,
         'voters': {},
@@ -212,7 +189,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   @override
   void dispose() {
     _descriptionController.dispose();
-    _tagsController.dispose(); // Dispose new controller
+    _tagsController.dispose();
     super.dispose();
   }
 
@@ -230,8 +207,8 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
           onPressed: () => Navigator.of(context).pop(false),
         ),
       ),
-      body: _isLoadingData
-          ? const Center(child: CircularProgressIndicator(semanticsLabel: "Fetching location...",))
+      body: _isLoadingInitialData // <<--- CHANGED: Combined loading state
+          ? const Center(child: CircularProgressIndicator(semanticsLabel: "Loading details...",))
           : SingleChildScrollView(
               padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.06, vertical: 20),
               child: Form(
@@ -265,28 +242,28 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
 
                     Text("Category*", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                     SizedBox(height: screenHeight * 0.008),
-                    DropdownButtonFormField<String>(
+                    // <<--- CHANGED: Dropdown populated from _fetchedCategories ---
+                    DropdownButtonFormField<CategoryModel>( 
                       decoration: const InputDecoration(
                         hintText: 'Select Category',
                       ),
-                      value: _selectedCategory,
+                      value: _selectedCategoryModel,
                       isExpanded: true,
-                      items: _categories.map((String category) {
-                        return DropdownMenuItem<String>(
-                          value: category,
-                          child: Text(category, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
+                      items: _fetchedCategories.map((CategoryModel category) {
+                        return DropdownMenuItem<CategoryModel>(
+                          value: category, // Store the whole CategoryModel object
+                          child: Text(category.name, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
                         );
                       }).toList(),
-                      onChanged: (String? newValue) {
+                      onChanged: (CategoryModel? newValue) {
                         setState(() {
-                          _selectedCategory = newValue;
+                          _selectedCategoryModel = newValue;
                         });
                       },
                       validator: (value) => value == null ? 'Please select a category.' : null,
                     ),
                     SizedBox(height: screenHeight * 0.03),
                     
-                    // --- Urgency Level Dropdown ---
                     Text("Urgency Level (Optional)", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                     SizedBox(height: screenHeight * 0.008),
                     DropdownButtonFormField<String>(
@@ -306,7 +283,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                           _selectedUrgency = newValue;
                         });
                       },
-                      // No validator, as it's optional
                     ),
                     SizedBox(height: screenHeight * 0.03),
 
@@ -315,7 +291,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                     CustomTextField(
                       controller: _descriptionController,
                       hintText: 'Type description here...',
-                      maxLines: 4, // Reduced slightly
+                      maxLines: 4,
                       keyboardType: TextInputType.multiline,
                       textCapitalization: TextCapitalization.sentences,
                       validator: (value) {
@@ -330,7 +306,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                     ),
                     SizedBox(height: screenHeight * 0.03),
 
-                    // --- Tags Input ---
                     Text("Tags (Optional, comma-separated)", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                     SizedBox(height: screenHeight * 0.008),
                     CustomTextField(
@@ -338,14 +313,12 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                       hintText: 'e.g., broken, urgent, road_hazard',
                       maxLines: 1,
                       keyboardType: TextInputType.text,
-                      // No validator, as it's optional
                     ),
                     SizedBox(height: screenHeight * 0.05),
 
-
                     AuthButton(
                       text: 'Submit Report',
-                      onPressed: _isLoadingData ? null : _submitReport,
+                      onPressed: _isLoadingInitialData ? null : _submitReport,
                       isLoading: _isSubmitting,
                     ),
                     SizedBox(height: screenHeight * 0.02),
