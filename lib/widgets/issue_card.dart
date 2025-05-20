@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../models/issue_model.dart'; 
-import '../services/firestore_service.dart'; 
-import '../screens/full_screen_image_view.dart'; 
-import '../widgets/comments_dialog.dart'; 
+import '../models/issue_model.dart';
+import '../services/firestore_service.dart';
+import '../screens/full_screen_image_view.dart';
+import '../widgets/comments_dialog.dart';
 
 // Import necessary packages for AI risk prediction
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import '../services/risk_prediction_service.dart'; 
+import '../services/risk_prediction_service.dart';
 import 'dart:developer' as developer;
 
 class IssueCard extends StatefulWidget {
@@ -58,7 +58,10 @@ class _IssueCardState extends State<IssueCard> {
         widget.issue.upvotes != oldWidget.issue.upvotes ||
         widget.issue.downvotes != oldWidget.issue.downvotes ||
         !_mapEquals(widget.issue.voters, oldWidget.issue.voters) ||
-        widget.issue.status != oldWidget.issue.status) {
+        widget.issue.status != oldWidget.issue.status ||
+        widget.issue.urgency != oldWidget.issue.urgency || 
+        !_listEquals(widget.issue.tags, oldWidget.issue.tags) 
+        ) {
       setState(() {
         _updateOptimisticStateFromWidget();
         _riskPredictionText = null;
@@ -78,6 +81,25 @@ class _IssueCardState extends State<IssueCard> {
     }
     return true;
   }
+
+  bool _listEquals<T>(List<T>? a, List<T>? b) {
+    if (a == null && b == null) {
+      return true;
+    }
+    if (a == null || b == null) {
+      return false;
+    }
+    if (a.length != b.length) {
+      return false;
+    }
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
 
   String _formatTimestamp(Timestamp timestamp) {
     final dateTime = timestamp.toDate();
@@ -103,7 +125,7 @@ class _IssueCardState extends State<IssueCard> {
     switch (status.toLowerCase()) {
       case 'resolved':
         return Colors.green.shade50;
-      case 'addressed': // Changed from 'in progress' to match potential status
+      case 'addressed':
         return Colors.orange.shade50;
       case 'reported':
       default:
@@ -128,10 +150,23 @@ class _IssueCardState extends State<IssueCard> {
       case 'resolved':
         return Icons.check_circle_outline_rounded;
       case 'addressed':
-        return Icons.task_alt_rounded; // Icon for addressed/in progress
+        return Icons.task_alt_rounded;
       case 'reported':
       default:
         return Icons.error_outline_rounded;
+    }
+  }
+
+  Color _getUrgencyColor(String? urgency) {
+    switch (urgency?.toLowerCase()) {
+      case 'high':
+        return Colors.red.shade600;
+      case 'medium':
+        return Colors.orange.shade600;
+      case 'low':
+        return Colors.blue.shade600;
+      default:
+        return Colors.grey.shade500;
     }
   }
 
@@ -146,7 +181,6 @@ class _IssueCardState extends State<IssueCard> {
     }
 
     final String userId = _currentUser.uid;
-
     int previousOptimisticUpvotes = _optimisticUpvotes;
     int previousOptimisticDownvotes = _optimisticDownvotes;
     VoteType? previousOptimisticVote = _optimisticVote;
@@ -157,20 +191,19 @@ class _IssueCardState extends State<IssueCard> {
 
     if (_optimisticVote == voteType) {
       newLocalVoteState = null;
-      if (voteType == VoteType.upvote) {
+      if (voteType == VoteType.upvote) { // FIX: Added curly braces
         newOptimisticUpvotes--;
-      } else {
+      } else { // FIX: Added curly braces
         newOptimisticDownvotes--;
       }
     } else {
       newLocalVoteState = voteType;
-      if (_optimisticVote == VoteType.upvote) {
+      if (_optimisticVote == VoteType.upvote) { // FIX: Added curly braces
         newOptimisticUpvotes--;
       }
-      if (_optimisticVote == VoteType.downvote) {
+      if (_optimisticVote == VoteType.downvote) { // FIX: Added curly braces
         newOptimisticDownvotes--;
       }
-
       if (voteType == VoteType.upvote) {
         newOptimisticUpvotes++;
       } else {
@@ -211,44 +244,30 @@ class _IssueCardState extends State<IssueCard> {
       }
       return;
     }
-
     if (mounted) {
-      setState(() {
-        _isFetchingRisk = true;
-        _riskPredictionText = null; 
-      });
+      setState(() => _isFetchingRisk = true);
     }
-
     try {
       final http.Response imageResponse = await http.get(Uri.parse(imageUrl));
       if (imageResponse.statusCode == 200) {
         final Uint8List imageBytes = imageResponse.bodyBytes;
         final String? prediction = await RiskPredictionService.getRiskPredictionFromImage(imageBytes);
-
         if (mounted) {
-          setState(() {
-            _riskPredictionText = prediction ?? "No specific risks identified or unable to analyze.";
-          });
+          setState(() => _riskPredictionText = prediction ?? "No specific risks identified or unable to analyze.");
         }
       } else {
         if (mounted) {
-          setState(() {
-            _riskPredictionText = "Failed to load image (Error: ${imageResponse.statusCode}).";
-          });
+          setState(() => _riskPredictionText = "Failed to load image (Error: ${imageResponse.statusCode}).");
         }
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _riskPredictionText = "Error predicting risk. Please try again.";
-        });
+        setState(() => _riskPredictionText = "Error predicting risk. Please try again.");
       }
       developer.log("Error fetching risk prediction: $e", name: "IssueCard");
     } finally {
       if (mounted) {
-        setState(() {
-          _isFetchingRisk = false;
-        });
+        setState(() => _isFetchingRisk = false);
       }
     }
   }
@@ -275,44 +294,20 @@ class _IssueCardState extends State<IssueCard> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.auto_awesome_outlined, 
-                        size: 17,
-                        color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor,
-                      ),
+                      Icon(Icons.auto_awesome_outlined, size: 17, color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor),
                       const SizedBox(width: 5),
-                      Text(
-                        "AI Risk Analysis",
-                        style: TextStyle(fontSize: 12.5, color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor, fontWeight: FontWeight.w500),
-                      ),
+                      Text("AI Risk Analysis", style: TextStyle(fontSize: 12.5, color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 ),
               ),
-              if (_isFetchingRisk)
-                const Padding(
-                  padding: EdgeInsets.only(left: 10.0),
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2.0),
-                  ),
-                ),
+              if (_isFetchingRisk) const Padding(padding: EdgeInsets.only(left: 10.0), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2.0))),
             ],
           ),
           if (_riskPredictionText != null && !_isFetchingRisk)
             Padding(
               padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 6.0),
-              child: Text(
-                _riskPredictionText!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: Colors.black.withAlpha(191),
-                  fontSize: 12.5,
-                  fontStyle: FontStyle.italic,
-                ),
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(_riskPredictionText!, style: textTheme.bodySmall?.copyWith(color: Colors.black.withAlpha((0.75 * 255).round()), fontSize: 12.5, fontStyle: FontStyle.italic), maxLines: 4, overflow: TextOverflow.ellipsis), // FIX: withOpacity to withAlpha
             ),
         ],
       ),
@@ -328,7 +323,7 @@ class _IssueCardState extends State<IssueCard> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
       elevation: 1.5,
-      shadowColor: Colors.grey.withAlpha(51), // 0.2 * 255 ≈ 51
+      shadowColor: Colors.grey.withAlpha((0.2 * 255).round()), // FIX: withOpacity to withAlpha
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       color: Colors.white,
       child: Padding(
@@ -336,7 +331,6 @@ class _IssueCardState extends State<IssueCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // User Info and Status Pill Row
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -346,36 +340,21 @@ class _IssueCardState extends State<IssueCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.issue.username.isNotEmpty ? widget.issue.username : 'Anonymous',
-                        style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 15.5),
-                      ),
-                      Text(
-                        _formatTimestamp(widget.issue.timestamp),
-                        style: textTheme.bodySmall?.copyWith(color: Colors.grey[600], fontSize: 12.5),
-                      ),
+                      Text(widget.issue.username.isNotEmpty ? widget.issue.username : 'Anonymous', style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 15.5)),
+                      Text(_formatTimestamp(widget.issue.timestamp), style: textTheme.bodySmall?.copyWith(color: Colors.grey[600], fontSize: 12.5)),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _getStatusPillBackgroundColor(widget.issue.status),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                  decoration: BoxDecoration(color: _getStatusPillBackgroundColor(widget.issue.status), borderRadius: BorderRadius.circular(16)),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(_getStatusPillIcon(widget.issue.status), size: 11, color: _getStatusPillTextColor(widget.issue.status)),
                       const SizedBox(width: 3),
-                      Text(
-                        widget.issue.status,
-                        style: TextStyle(
-                            color: _getStatusPillTextColor(widget.issue.status),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 10.5),
-                      ),
+                      Text(widget.issue.status, style: TextStyle(color: _getStatusPillTextColor(widget.issue.status), fontWeight: FontWeight.w600, fontSize: 10.5)),
                     ],
                   ),
                 ),
@@ -383,139 +362,90 @@ class _IssueCardState extends State<IssueCard> {
             ),
             SizedBox(height: widget.issue.description.isNotEmpty ? 8 : 4),
 
-            // Description and Location
             if (widget.issue.description.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4.0), 
+                child: Text(widget.issue.description, style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha((0.8 * 255).round())), maxLines: 3, overflow: TextOverflow.ellipsis), // FIX: withOpacity to withAlpha
+              ),
+            
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: Wrap( 
+                spacing: 6.0, 
+                runSpacing: 4.0, 
                 children: [
-                  Text(
-                    widget.issue.description,
-                    style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha(204)), // 0.8 * 255 ≈ 204
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                  Chip(
+                    avatar: Icon(Icons.category_outlined, size: 14, color: Theme.of(context).colorScheme.secondary),
+                    label: Text(widget.issue.category, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.w500)),
+                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer.withAlpha((0.3 * 255).round()), // FIX: withOpacity to withAlpha
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  const SizedBox(height: 4),
-                  if (widget.issue.location.address.isNotEmpty)
-                    Row(
-                      children: [
-                        Icon(Icons.location_on_outlined, size: 15, color: Colors.red[400]),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            widget.issue.location.address,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[700],
-                              fontSize: 12.5,
-                              fontStyle: FontStyle.italic,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                  if (widget.issue.urgency != null && widget.issue.urgency!.isNotEmpty)
+                    Chip(
+                      avatar: Icon(Icons.priority_high_rounded, size: 14, color: _getUrgencyColor(widget.issue.urgency)),
+                      label: Text(widget.issue.urgency!, style: TextStyle(fontSize: 11, color: _getUrgencyColor(widget.issue.urgency), fontWeight: FontWeight.w500)),
+                      backgroundColor: _getUrgencyColor(widget.issue.urgency).withAlpha((0.1 * 255).round()), // FIX: withOpacity to withAlpha
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
+                  if (widget.issue.tags != null && widget.issue.tags!.isNotEmpty)
+                    ...widget.issue.tags!.map((tag) => Chip( // FIX: Removed .toList()
+                          label: Text(tag, style: TextStyle(fontSize: 10, color: Colors.grey[700])),
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        )),
+                ],
+              ),
+            ),
+
+
+            if (widget.issue.location.address.isNotEmpty)
+              Row(
+                children: [
+                  Icon(Icons.location_on_outlined, size: 15, color: Colors.red[400]),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(widget.issue.location.address, style: textTheme.bodySmall?.copyWith(color: Colors.grey[700], fontSize: 12.5, fontStyle: FontStyle.italic), maxLines: 1, overflow: TextOverflow.ellipsis)),
                 ],
               ),
             SizedBox(height: widget.issue.imageUrl.isNotEmpty ? 12 : 8),
 
-            // ===================================================================
-            // Image Display Section
-            // This is where the image is shown. The logic seems correct.
-            // If images are not appearing, check:
-            // 1. Firebase Storage URLs: Ensure `widget.issue.imageUrl` contains a valid
-            //    and accessible Firebase Storage download URL.
-            // 2. Firebase Storage Rules: Make sure your storage rules allow public read
-            //    access to the images, or read access for authenticated users.
-            // 3. Network Connection: Ensure the device has internet access.
-            // ===================================================================
             if (widget.issue.imageUrl.isNotEmpty)
               GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => FullScreenImageView(imageUrl: widget.issue.imageUrl),
-                    ),
-                  );
-                },
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImageView(imageUrl: widget.issue.imageUrl))),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8.0),
                   child: Container(
-                    height: 180, // You can adjust this height if needed
+                    height: 180,
                     width: double.infinity,
-                    color: Colors.grey[200], // Placeholder color while loading
+                    color: Colors.grey[200],
                     child: Image.network(
                       widget.issue.imageUrl,
                       fit: BoxFit.cover,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child; // Image loaded
-                        return const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2.5),
-                        );
-                      },
+                      loadingBuilder: (context, child, loadingProgress) => loadingProgress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
                       errorBuilder: (context, error, stackTrace) {
                         developer.log("Error loading image in IssueCard: $error", name: "IssueCard");
-                        return Center(
-                          child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40),
-                        );
+                        return Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40));
                       },
                     ),
                   ),
                 ),
               ),
-            // ===================================================================
-            // End of Image Display Section
-            // ===================================================================
             
-            if (widget.issue.imageUrl.isNotEmpty)
-              _buildRiskPredictionSection(),
+            if (widget.issue.imageUrl.isNotEmpty) _buildRiskPredictionSection(),
+            const SizedBox(height: 10),
 
-            const SizedBox(height: 10), 
-
-            // Action Buttons Row
             Row(
-              mainAxisAlignment: MainAxisAlignment.start, // Aligns buttons to the start
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                _ActionChipButton(
-                  icon: Icons.arrow_upward_rounded,
-                  label: _optimisticUpvotes.toString(),
-                  isActive: userHasUpvoted,
-                  activeColor: Colors.green.shade600,
-                  onTap: () => _handleVote(VoteType.upvote),
-                ),
+                _ActionChipButton(icon: Icons.arrow_upward_rounded, label: _optimisticUpvotes.toString(), isActive: userHasUpvoted, activeColor: Colors.green.shade600, onTap: () => _handleVote(VoteType.upvote)),
                 const SizedBox(width: 8),
-                _ActionChipButton(
-                  icon: Icons.arrow_downward_rounded,
-                  label: _optimisticDownvotes.toString(),
-                  isActive: userHasDownvoted,
-                  activeColor: Colors.red.shade600,
-                  onTap: () => _handleVote(VoteType.downvote),
-                ),
+                _ActionChipButton(icon: Icons.arrow_downward_rounded, label: _optimisticDownvotes.toString(), isActive: userHasDownvoted, activeColor: Colors.red.shade600, onTap: () => _handleVote(VoteType.downvote)),
                 const SizedBox(width: 8),
-                _ActionChipButton(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: widget.issue.commentsCount.toString(),
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => CommentsDialog(
-                        issueId: widget.issue.id,
-                        issueDescription: widget.issue.description,
-                      ),
-                    );
-                  },
-                ),
+                _ActionChipButton(icon: Icons.chat_bubble_outline_rounded, label: widget.issue.commentsCount.toString(), onTap: () => showDialog(context: context, builder: (context) => CommentsDialog(issueId: widget.issue.id, issueDescription: widget.issue.description))),
                 const SizedBox(width: 8),
-                _ActionChipButton(
-                  icon: Icons.share_outlined,
-                  label: "Share", // Label for share button
-                  onTap: () {
-                    // TODO: Implement share functionality
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Share Issue - Coming Soon!')),
-                    );
-                  },
-                ),
+                _ActionChipButton(icon: Icons.share_outlined, label: "Share", onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Share Issue - Coming Soon!')))),
               ],
             ),
           ],
@@ -525,7 +455,6 @@ class _IssueCardState extends State<IssueCard> {
   }
 }
 
-// _ActionChipButton class (reusable button style for actions)
 class _ActionChipButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -533,42 +462,28 @@ class _ActionChipButton extends StatelessWidget {
   final bool isActive;
   final Color? activeColor;
 
-  const _ActionChipButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.isActive = false,
-    this.activeColor,
-  });
+  const _ActionChipButton({required this.icon, required this.label, required this.onTap, this.isActive = false, this.activeColor});
 
   @override
   Widget build(BuildContext context) {
-    const Color defaultColorForElements = Colors.black54; // Consistent default color
-
+    const Color defaultColorForElements = Colors.black54;
     final Color effectiveIconColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
     final Color effectiveTextColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
-    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(179) : Colors.grey[350]!;
-    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(20) : Colors.transparent;
+    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha((0.7 * 255).round()) : Colors.grey[350]!; // FIX: withOpacity to withAlpha
+    final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha((0.08 * 255).round()) : Colors.transparent; // FIX: withOpacity to withAlpha
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20), // Standardized border radius
+      borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
-        decoration: BoxDecoration(
-          color: effectiveFillColor,
-          border: Border.all(color: effectiveBorderColor, width: 1.2),
-          borderRadius: BorderRadius.circular(20),
-        ),
+        decoration: BoxDecoration(color: effectiveFillColor, border: Border.all(color: effectiveBorderColor, width: 1.2), borderRadius: BorderRadius.circular(20)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: effectiveIconColor), // Icon size
-            const SizedBox(width: 4), // Spacing between icon and text
-            Text(
-              label,
-              style: TextStyle(fontSize: 12.5, color: effectiveTextColor, fontWeight: FontWeight.w500), // Text style
-            ),
+            Icon(icon, size: 17, color: effectiveIconColor),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontSize: 12.5, color: effectiveTextColor, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
