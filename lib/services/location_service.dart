@@ -1,4 +1,3 @@
-// lib/services/location_service.dart
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,24 +9,19 @@ class LocationService {
 
     if (!status.isGranted) {
       if (status.isPermanentlyDenied) {
-         // Consider prompting to open settings, but don't call openAppSettings() directly here
-         // Let the UI decide to show a button for that.
-         developer.log('Location permission permanently denied.', name: 'LocationService');
+        // Consider prompting to open settings, but don't call openAppSettings() directly here
+        // Let the UI decide to show a button for that.
+        developer.log('Location permission permanently denied.', name: 'LocationService');
       } else {
-         developer.log('Location permission denied.', name: 'LocationService');
+        developer.log('Location permission denied.', name: 'LocationService');
       }
       throw Exception('Location permission not granted. Status: $status');
     }
 
     try {
-      // Updated to use LocationSettings instead of deprecated desiredAccuracy
-      final LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 100,
-      );
-
+      // Use desiredAccuracy instead of locationSettings (which is invalid here)
       return await Geolocator.getCurrentPosition(
-        locationSettings: locationSettings,
+        desiredAccuracy: LocationAccuracy.high,
       );
     } catch (e, s) {
       developer.log('Error getting location: $e', name: 'LocationService', error: e, stackTrace: s);
@@ -52,7 +46,7 @@ class LocationService {
         return addressParts.where((part) => part.isNotEmpty).join(', ');
       }
     } catch (e, s) {
-      developer.log('Error getting address: $e', name: 'LocationService', error:e, stackTrace:s);
+      developer.log('Error getting address: $e', name: 'LocationService', error: e, stackTrace: s);
     }
     return "Address details not found";
   }

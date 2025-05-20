@@ -31,48 +31,43 @@ class _ReportScreenState extends State<ReportScreen> {
     _initializeCameraAndLocation();
   }
 
-  Future<void> _initializeCameraAndLocation() async {
-    final cameraStatus = await Permission.camera.request();
-    final locationStatus = await Permission.locationWhenInUse.request();
+Future<void> _initializeCameraAndLocation() async {
+  final cameraStatus = await Permission.camera.request();
+  final locationStatus = await Permission.locationWhenInUse.request();
 
-    if (!mounted) return;
+  if (!mounted) return;
 
-    if (cameraStatus != PermissionStatus.granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Camera permission denied')),
-      );
-      return;
-    }
-
-    if (locationStatus != PermissionStatus.granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location permission denied')),
-      );
-      return;
-    }
-
-    final cameras = await availableCameras();
-    final firstCamera = cameras.first;
-
-    _cameraController = CameraController(
-      firstCamera,
-      ResolutionPreset.medium,
+  if (cameraStatus != PermissionStatus.granted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Camera permission denied')),
     );
-
-    await _cameraController!.initialize();
-
-    // Updated location settings
-    final LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 100,
-    );
-
-    _currentPosition = await Geolocator.getCurrentPosition(
-      locationSettings: locationSettings,
-    );
-
-    if (mounted) setState(() {});
+    return;
   }
+
+  if (locationStatus != PermissionStatus.granted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Location permission denied')),
+    );
+    return;
+  }
+
+  final cameras = await availableCameras();
+  final firstCamera = cameras.first;
+
+  _cameraController = CameraController(
+    firstCamera,
+    ResolutionPreset.medium,
+  );
+
+  await _cameraController!.initialize();
+
+  _currentPosition = await Geolocator.getCurrentPosition(
+    desiredAccuracy: LocationAccuracy.high,
+  );
+
+  if (mounted) setState(() {});
+}
+
 
   Future<void> _takePicture() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized) {
