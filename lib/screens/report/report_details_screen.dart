@@ -23,6 +23,7 @@ class ReportDetailsScreen extends StatefulWidget {
 
 class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _tagsController = TextEditingController(); // For tags input
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   bool _isLoadingData = true;
@@ -31,12 +32,15 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   String? _currentAddress;
 
   String? _selectedCategory;
-  // Consider moving this list to a constants file or fetching from Firestore if it changes often
   final List<String> _categories = [
     'Pothole', 'Street Light Out', 'Waste Missed',
     'Water Leakage', 'Damaged Signage', 'Fallen Tree',
     'Illegal Dumping', 'Blocked Drain', 'Public Property Vandalism', 'Other'
   ];
+
+  String? _selectedUrgency; // For urgency dropdown
+  final List<String> _urgencyLevels = ['Low', 'Medium', 'High'];
+
 
   final LocationService _locationService = LocationService();
   final ImageUploadService _imageUploadService = ImageUploadService();
@@ -69,14 +73,12 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     }
   }
 
-  // Helper method to map category to department
   String? _getDepartmentForCategory(String? category) {
     if (category == null) return null;
-
     switch (category) {
       case 'Pothole':
       case 'Damaged Signage':
-      case 'Fallen Tree': // Could also be Parks & Rec or specialized tree unit
+      case 'Fallen Tree':
         return 'Road Maintenance Dept.';
       case 'Street Light Out':
         return 'Electricity Dept.';
@@ -84,12 +86,12 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       case 'Illegal Dumping':
         return 'Sanitation Dept.';
       case 'Water Leakage':
-      case 'Blocked Drain': // Could also be Sanitation or a dedicated drainage department
+      case 'Blocked Drain':
         return 'Water Supply Dept.';
-      case 'Public Property Vandalism': // Could be general or specific to the property type
-        return 'Public Safety / Police'; // Or a general maintenance department
-      default: // For 'Other' or unmapped categories
-        return 'General Grievances'; // Or a specific department that handles uncategorized issues
+      case 'Public Property Vandalism':
+        return 'Public Safety / Police';
+      default:
+        return 'General Grievances';
     }
   }
 
@@ -98,6 +100,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     final AppUser? appUser = userProfileService.currentUserProfile;
 
     if (!_formKey.currentState!.validate()) return;
+    
     if (_selectedCategory == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -106,6 +109,16 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
       return;
     }
+    // Urgency is optional, so no specific check here unless you make it mandatory
+    // if (_selectedUrgency == null) {
+    //   if (mounted) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       const SnackBar(content: Text('Please select an urgency level.')),
+    //     );
+    //   }
+    //   return;
+    // }
+
 
     if (_currentPosition == null) {
       if (mounted) {
@@ -120,7 +133,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('User not authenticated. Please log in again.')),
         );
-      
       }
       return;
     }
@@ -143,10 +155,18 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
 
       final String? assignedDepartment = _getDepartmentForCategory(_selectedCategory);
+      
+      // Process tags: split by comma, trim whitespace, remove empty tags
+      final List<String> tagsList = _tagsController.text.split(',')
+          .map((tag) => tag.trim())
+          .where((tag) => tag.isNotEmpty)
+          .toList();
 
       final Map<String, dynamic> issueData = {
         'description': _descriptionController.text.trim(),
         'category': _selectedCategory!,
+        'urgency': _selectedUrgency, // Can be null if not selected
+        'tags': tagsList.isNotEmpty ? tagsList : null, // Store as list, or null if empty
         'imageUrl': imageUrl,
         'timestamp': FieldValue.serverTimestamp(),
         'location': {
@@ -156,16 +176,15 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         },
         'userId': appUser.uid,
         'username': appUser.username!,
-        'status': 'Reported', // Initial status
-        'isUnresolved': true,  // For easier querying of active issues
-        'assignedDepartment': assignedDepartment, // Set based on category
+        'status': 'Reported',
+        'isUnresolved': true,
+        'assignedDepartment': assignedDepartment,
         'upvotes': 0,
         'downvotes': 0,
         'voters': {},
         'commentsCount': 0,
         'affectedUsersCount': 1,
         'affectedUserIds': [appUser.uid],
-         // 'resolutionTimestamp': null, // Not needed at creation
       };
 
       await _firestoreService.addIssue(issueData);
@@ -174,7 +193,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Issue reported successfully!')),
         );
-        // Navigate to the main app screen for citizens or official dashboard for officials
         String targetRoute = appUser.isOfficial ? '/official_dashboard' : '/app';
         Navigator.of(context).pushNamedAndRemoveUntil(targetRoute, (Route<dynamic> route) => false);
       }
@@ -194,6 +212,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   @override
   void dispose() {
     _descriptionController.dispose();
+    _tagsController.dispose(); // Dispose new controller
     super.dispose();
   }
 
@@ -207,8 +226,8 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       appBar: AppBar(
         title: const Text('Report Details'),
         leading: IconButton(
-          icon: const Icon(Icons.close), // Using default back icon color from AppBarTheme
-          onPressed: () => Navigator.of(context).pop(false), // Return false if report not submitted
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(false),
         ),
       ),
       body: _isLoadingData
@@ -227,36 +246,35 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                       ),
                     SizedBox(height: screenHeight * 0.03),
 
-                    Text("Location", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)), // Adjusted style
-                    SizedBox(height: screenHeight * 0.008), // Adjusted spacing
+                    Text("Location", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    SizedBox(height: screenHeight * 0.008),
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 15.0, horizontal: 16.0),
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8.0), // Consistent with TextField
+                        borderRadius: BorderRadius.circular(8.0),
                         border: Border.all(color: Colors.grey[350]!)
                       ),
                       child: Text(
                             _currentAddress ?? (_currentPosition != null ? 'Lat: ${_currentPosition!.latitude.toStringAsFixed(4)}, Lon: ${_currentPosition!.longitude.toStringAsFixed(4)}' : 'Fetching location...'),
-                            style: textTheme.bodyLarge?.copyWith(fontSize: 15), // Adjusted style
+                            style: textTheme.bodyLarge?.copyWith(fontSize: 15),
                           ),
                     ),
                     SizedBox(height: screenHeight * 0.03),
 
-                    Text("Category", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)), // Adjusted style
-                    SizedBox(height: screenHeight * 0.008), // Adjusted spacing
+                    Text("Category*", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    SizedBox(height: screenHeight * 0.008),
                     DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         hintText: 'Select Category',
-                        // Using theme's input decoration, ensure it's defined in main.dart
                       ),
                       value: _selectedCategory,
                       isExpanded: true,
                       items: _categories.map((String category) {
                         return DropdownMenuItem<String>(
                           value: category,
-                          child: Text(category, style: textTheme.bodyLarge?.copyWith(fontSize: 15)), // Adjusted style
+                          child: Text(category, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
                         );
                       }).toList(),
                       onChanged: (String? newValue) {
@@ -267,13 +285,37 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                       validator: (value) => value == null ? 'Please select a category.' : null,
                     ),
                     SizedBox(height: screenHeight * 0.03),
+                    
+                    // --- Urgency Level Dropdown ---
+                    Text("Urgency Level (Optional)", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    SizedBox(height: screenHeight * 0.008),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        hintText: 'Select Urgency',
+                      ),
+                      value: _selectedUrgency,
+                      isExpanded: true,
+                      items: _urgencyLevels.map((String level) {
+                        return DropdownMenuItem<String>(
+                          value: level,
+                          child: Text(level, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedUrgency = newValue;
+                        });
+                      },
+                      // No validator, as it's optional
+                    ),
+                    SizedBox(height: screenHeight * 0.03),
 
-                    Text("Description", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)), // Adjusted style
-                    SizedBox(height: screenHeight * 0.008), // Adjusted spacing
-                    CustomTextField( // Assuming CustomTextField uses theme's InputDecoration
+                    Text("Description*", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    SizedBox(height: screenHeight * 0.008),
+                    CustomTextField(
                       controller: _descriptionController,
                       hintText: 'Type description here...',
-                      maxLines: 5,
+                      maxLines: 4, // Reduced slightly
                       keyboardType: TextInputType.multiline,
                       textCapitalization: TextCapitalization.sentences,
                       validator: (value) {
@@ -286,10 +328,23 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                         return null;
                       },
                     ),
+                    SizedBox(height: screenHeight * 0.03),
+
+                    // --- Tags Input ---
+                    Text("Tags (Optional, comma-separated)", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    SizedBox(height: screenHeight * 0.008),
+                    CustomTextField(
+                      controller: _tagsController,
+                      hintText: 'e.g., broken, urgent, road_hazard',
+                      maxLines: 1,
+                      keyboardType: TextInputType.text,
+                      // No validator, as it's optional
+                    ),
                     SizedBox(height: screenHeight * 0.05),
 
+
                     AuthButton(
-                      text: 'Submit Report', // More descriptive text
+                      text: 'Submit Report',
                       onPressed: _isLoadingData ? null : _submitReport,
                       isLoading: _isSubmitting,
                     ),

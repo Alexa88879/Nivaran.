@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geocoding/geocoding.dart';
-import 'dart:developer' as developer; // For logging
+import 'dart:developer' as developer; 
 
-import '../../widgets/issue_card.dart';
+import '../../widgets/issue_card.dart'; // Uses IssueCard
 import '../../models/issue_model.dart';
 import '../../services/location_service.dart';
 
@@ -49,10 +49,10 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
     if (!mounted) return;
     setState(() {
       _isFetchingLocation = true;
-      _currentLocationDisplay = "Fetching location..."; // Indicate fetching
+      _currentLocationDisplay = "Fetching location..."; 
     });
 
-    await _requestLocationPermission(); // Ensure permissions are checked/requested first
+    await _requestLocationPermission(); 
 
     var status = await Permission.locationWhenInUse.status;
     if (!status.isGranted) {
@@ -69,10 +69,9 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
     }
 
     try {
-      final Position? position = await _locationService.getCurrentPosition(); // This handles its own accuracy
+      final Position? position = await _locationService.getCurrentPosition(); 
 
       if (position != null) {
-        // Use geocoding to get a more detailed address
         List<Placemark> placemarks = await placemarkFromCoordinates(
           position.latitude,
           position.longitude,
@@ -85,7 +84,6 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
           if (place.street != null && place.street!.isNotEmpty) {
             displayAddress += place.street!;
           } else if (place.thoroughfare != null && place.thoroughfare!.isNotEmpty) {
-            // thoroughfare is often used for street names
             displayAddress += place.thoroughfare!;
           }
           
@@ -93,28 +91,24 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
             if (displayAddress.isNotEmpty) displayAddress += ", ";
             displayAddress += place.subLocality!;
           } else if (place.locality != null && place.locality!.isNotEmpty) {
-            // If no subLocality, use locality (city)
             if (displayAddress.isNotEmpty) displayAddress += ", ";
             displayAddress += place.locality!;
           }
 
-
-          if (displayAddress.isEmpty) { // Fallback if street and subLocality are empty
+          if (displayAddress.isEmpty) { 
             displayAddress = place.locality ?? place.administrativeArea ?? "Current Location";
           }
           
-          // Limit length if too long
           if (displayAddress.length > 30) {
             displayAddress = '${displayAddress.substring(0, 27)}...';
           }
-
 
           setState(() {
             _currentLocationDisplay = displayAddress.isNotEmpty ? displayAddress : "Unnamed Area";
           });
         } else if (mounted) {
           setState(() {
-            _currentLocationDisplay = "Current Location"; // Fallback if geocoding fails
+            _currentLocationDisplay = "Current Location"; 
           });
         }
       } else if (mounted) {
@@ -129,7 +123,7 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
       developer.log('Error fetching location in IssuesListScreen: ${e.toString()}', name: 'IssuesListScreen');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error determining location: Check permissions and services.')),
+          const SnackBar(content: Text('Error determining location: Check permissions and services.')),
         );
         setState(() {
           _currentLocationDisplay = "Location Error";
@@ -159,10 +153,6 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // IconButton( // Optional: Add a refresh button
-            //   icon: Icon(Icons.refresh, size: 20),
-            //   onPressed: _isFetchingLocation ? null : _fetchCurrentLocationAndUpdateDisplay,
-            // ),
           ],
         ),
       ),
@@ -173,13 +163,11 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting && !_isFetchingLocation) {
-            // Show loading for Firestore only if not fetching location,
-            // as location fetching has its own indicator in AppBar
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
             developer.log('Firestore Error: ${snapshot.error}', name: 'IssuesListScreen');
-            return Center(child: Text('Error loading issues. Please try again.'));
+            return const Center(child: Text('Error loading issues. Please try again.'));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text('No issues reported yet. Be the first!'));
@@ -194,7 +182,8 @@ class _IssuesListScreenState extends State<IssuesListScreen> {
               final issueData = issuesDocs[index].data() as Map<String, dynamic>;
               final issueId = issuesDocs[index].id;
               final issue = Issue.fromFirestore(issueData, issueId);
-              return IssueCard(issue: issue);
+              // Each issue is rendered using IssueCard, which handles image display
+              return IssueCard(issue: issue); 
             },
           );
         },

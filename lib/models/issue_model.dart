@@ -1,3 +1,4 @@
+// lib/models/issue_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum VoteType { upvote, downvote }
@@ -21,7 +22,7 @@ class LocationModel {
     );
   }
 
-   Map<String, dynamic> toMap() { // Added toMap for consistency
+   Map<String, dynamic> toMap() { 
     return {
       'latitude': latitude,
       'longitude': longitude,
@@ -33,27 +34,29 @@ class LocationModel {
 class Issue {
   final String id;
   final String description;
-  final String category; // <<--- ADDED CATEGORY
-  final String? urgency; // Optional for now
+  final String category;
+  final String? urgency; // Existing field, will use for structured input
+  final List<String>? tags; // <<--- NEWLY ADDED FIELD
   final String imageUrl;
   final Timestamp timestamp;
   final LocationModel location;
   final String userId;
   final String username;
   final String status;
-  final String? assignedDepartment; // For routing
+  final String? assignedDepartment; 
   final int upvotes;
   final int downvotes;
   final Map<String, VoteType> voters; 
   final int commentsCount;
-  final int affectedUsersCount; // For community complaints
-  final List<String> affectedUserIds; // For community complaints
+  final int affectedUsersCount; 
+  final List<String> affectedUserIds; 
 
   Issue({
     required this.id,
     required this.description,
-    required this.category, // <<--- ADDED CATEGORY
+    required this.category,
     this.urgency,
+    this.tags, // <<--- ADDED TO CONSTRUCTOR
     required this.imageUrl,
     required this.timestamp,
     required this.location,
@@ -66,7 +69,7 @@ class Issue {
     required this.voters,
     required this.commentsCount,
     this.affectedUsersCount = 1,
-    List<String>? affectedUserIds, // Make it take a list, default to empty if null
+    List<String>? affectedUserIds,
   }) : affectedUserIds = affectedUserIds ?? [];
 
 
@@ -87,8 +90,9 @@ class Issue {
     return Issue(
       id: documentId,
       description: data['description'] as String? ?? 'No description',
-      category: data['category'] as String? ?? 'Uncategorized', // <<--- ADDED CATEGORY
+      category: data['category'] as String? ?? 'Uncategorized',
       urgency: data['urgency'] as String?,
+      tags: data['tags'] != null ? List<String>.from(data['tags']) : null, // <<--- ADDED MAPPING
       imageUrl: data['imageUrl'] as String? ?? '',
       timestamp: data['timestamp'] as Timestamp? ?? Timestamp.now(),
       location: LocationModel.fromMap(data['location'] as Map<String, dynamic>? ?? {}),
@@ -105,11 +109,12 @@ class Issue {
     );
   }
 
-  Map<String, dynamic> toMap() { // Added toMap method
+  Map<String, dynamic> toMap() { 
     return {
       'description': description,
       'category': category,
       if (urgency != null) 'urgency': urgency,
+      if (tags != null && tags!.isNotEmpty) 'tags': tags, // <<--- ADDED TO MAP
       'imageUrl': imageUrl,
       'timestamp': timestamp,
       'location': location.toMap(),
@@ -119,7 +124,7 @@ class Issue {
       if (assignedDepartment != null) 'assignedDepartment': assignedDepartment,
       'upvotes': upvotes,
       'downvotes': downvotes,
-      'voters': voters.map((key, value) => MapEntry(key, value.name)), // Store enum as string
+      'voters': voters.map((key, value) => MapEntry(key, value.name)), 
       'commentsCount': commentsCount,
       'affectedUsersCount': affectedUsersCount,
       'affectedUserIds': affectedUserIds,

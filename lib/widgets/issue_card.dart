@@ -1,16 +1,18 @@
+// lib/widgets/issue_card.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../models/issue_model.dart'; // Assuming your model path
-import '../services/firestore_service.dart'; // Assuming your service path
-import '../screens/full_screen_image_view.dart'; // Assuming your screen path
-import '../widgets/comments_dialog.dart'; // Add this import
+import '../models/issue_model.dart'; 
+import '../services/firestore_service.dart'; 
+import '../screens/full_screen_image_view.dart'; 
+import '../widgets/comments_dialog.dart'; 
 
 // Import necessary packages for AI risk prediction
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import '../services/risk_prediction_service.dart'; // Path to your RiskPredictionService
+import '../services/risk_prediction_service.dart'; 
+import 'dart:developer' as developer;
 
 class IssueCard extends StatefulWidget {
   final Issue issue;
@@ -29,7 +31,6 @@ class _IssueCardState extends State<IssueCard> {
   int _optimisticUpvotes = 0;
   int _optimisticDownvotes = 0;
 
-  // State variables for AI Risk Prediction
   String? _riskPredictionText;
   bool _isFetchingRisk = false;
 
@@ -43,8 +44,8 @@ class _IssueCardState extends State<IssueCard> {
     _optimisticUpvotes = widget.issue.upvotes;
     _optimisticDownvotes = widget.issue.downvotes;
     if (_currentUser != null &&
-        widget.issue.voters.containsKey(_currentUser.uid)) { // Removed '!'
-      _optimisticVote = widget.issue.voters[_currentUser.uid]; // Removed '!'
+        widget.issue.voters.containsKey(_currentUser.uid)) {
+      _optimisticVote = widget.issue.voters[_currentUser.uid];
     } else {
       _optimisticVote = null;
     }
@@ -60,7 +61,6 @@ class _IssueCardState extends State<IssueCard> {
         widget.issue.status != oldWidget.issue.status) {
       setState(() {
         _updateOptimisticStateFromWidget();
-        // Reset AI prediction if issue changes significantly
         _riskPredictionText = null;
         _isFetchingRisk = false;
       });
@@ -103,7 +103,7 @@ class _IssueCardState extends State<IssueCard> {
     switch (status.toLowerCase()) {
       case 'resolved':
         return Colors.green.shade50;
-      case 'addressed':
+      case 'addressed': // Changed from 'in progress' to match potential status
         return Colors.orange.shade50;
       case 'reported':
       default:
@@ -128,7 +128,7 @@ class _IssueCardState extends State<IssueCard> {
       case 'resolved':
         return Icons.check_circle_outline_rounded;
       case 'addressed':
-        return Icons.task_alt_rounded;
+        return Icons.task_alt_rounded; // Icon for addressed/in progress
       case 'reported':
       default:
         return Icons.error_outline_rounded;
@@ -145,7 +145,7 @@ class _IssueCardState extends State<IssueCard> {
       return;
     }
 
-    final String userId = _currentUser.uid; // Removed '!'
+    final String userId = _currentUser.uid;
 
     int previousOptimisticUpvotes = _optimisticUpvotes;
     int previousOptimisticDownvotes = _optimisticDownvotes;
@@ -157,9 +157,9 @@ class _IssueCardState extends State<IssueCard> {
 
     if (_optimisticVote == voteType) {
       newLocalVoteState = null;
-      if (voteType == VoteType.upvote) { // Added curly braces
+      if (voteType == VoteType.upvote) {
         newOptimisticUpvotes--;
-      } else { // Added curly braces
+      } else {
         newOptimisticDownvotes--;
       }
     } else {
@@ -171,9 +171,9 @@ class _IssueCardState extends State<IssueCard> {
         newOptimisticDownvotes--;
       }
 
-      if (voteType == VoteType.upvote) { // Added curly braces
+      if (voteType == VoteType.upvote) {
         newOptimisticUpvotes++;
-      } else { // Added curly braces
+      } else {
         newOptimisticDownvotes++;
       }
     }
@@ -202,7 +202,6 @@ class _IssueCardState extends State<IssueCard> {
     }
   }
 
-  // Method to fetch and display AI risk prediction
   Future<void> _fetchAndDisplayRiskPrediction(String imageUrl) async {
     if (imageUrl.isEmpty) {
       if (mounted) {
@@ -216,7 +215,7 @@ class _IssueCardState extends State<IssueCard> {
     if (mounted) {
       setState(() {
         _isFetchingRisk = true;
-        _riskPredictionText = null; // Clear previous prediction
+        _riskPredictionText = null; 
       });
     }
 
@@ -244,7 +243,7 @@ class _IssueCardState extends State<IssueCard> {
           _riskPredictionText = "Error predicting risk. Please try again.";
         });
       }
-      // print("Error fetching risk prediction: $e"); // Commented out avoid_print
+      developer.log("Error fetching risk prediction: $e", name: "IssueCard");
     } finally {
       if (mounted) {
         setState(() {
@@ -277,7 +276,7 @@ class _IssueCardState extends State<IssueCard> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        Icons.auto_awesome_outlined, // AI/Insight icon
+                        Icons.auto_awesome_outlined, 
                         size: 17,
                         color: _isFetchingRisk ? Colors.grey.shade500 : Theme.of(context).primaryColor,
                       ),
@@ -307,7 +306,7 @@ class _IssueCardState extends State<IssueCard> {
               child: Text(
                 _riskPredictionText!,
                 style: textTheme.bodySmall?.copyWith(
-                  color: Colors.black.withAlpha((255 * 0.75).round()), // Replaced withOpacity
+                  color: Colors.black.withAlpha(191),
                   fontSize: 12.5,
                   fontStyle: FontStyle.italic,
                 ),
@@ -329,7 +328,7 @@ class _IssueCardState extends State<IssueCard> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
       elevation: 1.5,
-      shadowColor: Colors.grey.withAlpha(51),
+      shadowColor: Colors.grey.withAlpha(51), // 0.2 * 255 ≈ 51
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       color: Colors.white,
       child: Padding(
@@ -391,7 +390,7 @@ class _IssueCardState extends State<IssueCard> {
                 children: [
                   Text(
                     widget.issue.description,
-                    style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha(204)),
+                    style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha(204)), // 0.8 * 255 ≈ 204
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -419,7 +418,16 @@ class _IssueCardState extends State<IssueCard> {
               ),
             SizedBox(height: widget.issue.imageUrl.isNotEmpty ? 12 : 8),
 
-            // Image Display
+            // ===================================================================
+            // Image Display Section
+            // This is where the image is shown. The logic seems correct.
+            // If images are not appearing, check:
+            // 1. Firebase Storage URLs: Ensure `widget.issue.imageUrl` contains a valid
+            //    and accessible Firebase Storage download URL.
+            // 2. Firebase Storage Rules: Make sure your storage rules allow public read
+            //    access to the images, or read access for authenticated users.
+            // 3. Network Connection: Ensure the device has internet access.
+            // ===================================================================
             if (widget.issue.imageUrl.isNotEmpty)
               GestureDetector(
                 onTap: () {
@@ -433,35 +441,40 @@ class _IssueCardState extends State<IssueCard> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8.0),
                   child: Container(
-                    height: 180,
+                    height: 180, // You can adjust this height if needed
                     width: double.infinity,
-                    color: Colors.grey[200],
+                    color: Colors.grey[200], // Placeholder color while loading
                     child: Image.network(
                       widget.issue.imageUrl,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) {
-                          return child;
-                        } 
-                        return const Center(child: CircularProgressIndicator(strokeWidth: 2.5));
+                        if (loadingProgress == null) return child; // Image loaded
+                        return const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        );
                       },
                       errorBuilder: (context, error, stackTrace) {
-                        return Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40));
+                        developer.log("Error loading image in IssueCard: $error", name: "IssueCard");
+                        return Center(
+                          child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40),
+                        );
                       },
                     ),
                   ),
                 ),
               ),
+            // ===================================================================
+            // End of Image Display Section
+            // ===================================================================
             
-            // AI Risk Prediction Section - NEW
             if (widget.issue.imageUrl.isNotEmpty)
               _buildRiskPredictionSection(),
 
-            const SizedBox(height: 10), // Spacing before action buttons
+            const SizedBox(height: 10), 
 
             // Action Buttons Row
             Row(
-              mainAxisAlignment: MainAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start, // Aligns buttons to the start
               children: [
                 _ActionChipButton(
                   icon: Icons.arrow_upward_rounded,
@@ -495,8 +508,9 @@ class _IssueCardState extends State<IssueCard> {
                 const SizedBox(width: 8),
                 _ActionChipButton(
                   icon: Icons.share_outlined,
-                  label: "Share",
+                  label: "Share", // Label for share button
                   onTap: () {
+                    // TODO: Implement share functionality
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Share Issue - Coming Soon!')),
                     );
@@ -511,7 +525,7 @@ class _IssueCardState extends State<IssueCard> {
   }
 }
 
-// _ActionChipButton class
+// _ActionChipButton class (reusable button style for actions)
 class _ActionChipButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -529,16 +543,16 @@ class _ActionChipButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const Color defaultColorForElements = Colors.black54;
+    const Color defaultColorForElements = Colors.black54; // Consistent default color
 
     final Color effectiveIconColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
     final Color effectiveTextColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark) : defaultColorForElements;
-    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(178) : Colors.grey[350]!;
+    final Color effectiveBorderColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(179) : Colors.grey[350]!;
     final Color effectiveFillColor = isActive ? (activeColor ?? Theme.of(context).primaryColorDark).withAlpha(20) : Colors.transparent;
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(20), // Standardized border radius
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
         decoration: BoxDecoration(
@@ -549,11 +563,11 @@ class _ActionChipButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: effectiveIconColor),
-            const SizedBox(width: 4),
+            Icon(icon, size: 17, color: effectiveIconColor), // Icon size
+            const SizedBox(width: 4), // Spacing between icon and text
             Text(
               label,
-              style: TextStyle(fontSize: 12.5, color: effectiveTextColor, fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 12.5, color: effectiveTextColor, fontWeight: FontWeight.w500), // Text style
             ),
           ],
         ),
