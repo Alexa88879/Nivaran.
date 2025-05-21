@@ -34,7 +34,7 @@
         android:requestLegacyExternalStorage="true">
         <meta-data android:name="com.google.android.geo.API_KEY" android:value="@string/google_maps_api_key"/>
 
-                   <meta-data
+        <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="nivaran_default_channel" />
         <meta-data
