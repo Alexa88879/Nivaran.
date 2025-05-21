@@ -50,6 +50,8 @@ dependencies:
   google_sign_in: ^6.3.0
   fl_chart: ^0.65.0
   dio: ^5.8.0+1 
+  firebase_messaging: 14.9.4
+  flutter_local_notifications: ^19.2.1
   
   
 

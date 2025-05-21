@@ -1,15 +1,15 @@
 // lib/screens/main_app_scaffold.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart'; // Added for UserProfileService access
-import '../services/user_profile_service.dart'; // Added
+import 'package:provider/provider.dart';
+import '../services/user_profile_service.dart';
 import 'feed/issues_list_screen.dart';
 import 'report/camera_capture_screen.dart';
 import 'profile/account_screen.dart';
-import 'map/map_view_screen.dart'; // <-- NEW: Import for the map screen
+import 'map/map_view_screen.dart';
+import 'notifications/notifications_screen.dart'; // <-- NEW: Import for NotificationsScreen
 import '../utils/update_checker.dart';
 import 'dart:developer' as developer;
-
 
 class MainAppScaffold extends StatefulWidget {
   const MainAppScaffold({super.key});
@@ -18,24 +18,24 @@ class MainAppScaffold extends StatefulWidget {
   State<MainAppScaffold> createState() => _MainAppScaffoldState();
 }
 
-class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingObserver { // Added WidgetsBindingObserver
+class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   User? _currentUser;
-  bool _hasCheckedUpdate = false; // To ensure update check runs once per resume or init
+  bool _hasCheckedUpdate = false;
 
-  // Updated _widgetOptions to include MapViewScreen
+  // Updated _widgetOptions to include NotificationsScreen
   static final List<Widget> _widgetOptions = <Widget>[
     const IssuesListScreen(),
     const CameraCaptureScreen(),
-    const MapViewScreen(), // <-- NEW: Map Screen Added
-    const Center(child: Text('Notifications (Future)')),
-    AccountScreen(key: UniqueKey()),
+    const MapViewScreen(),
+    const NotificationsScreen(), // <-- NEW: Notifications Screen Added
+    AccountScreen(key: UniqueKey()), // Ensure AccountScreen rebuilds if needed
   ];
 
- @override
+  @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Register observer
+    WidgetsBinding.instance.addObserver(this);
     _currentUser = FirebaseAuth.instance.currentUser;
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -50,9 +50,6 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
           _currentUser = user;
         });
         if (user == null && ModalRoute.of(context)?.settings.name == '/app') {
-          // If user logs out from AccountScreen and we are still on /app route
-          // AuthWrapper in main.dart should handle navigation to RoleSelectionScreen
-          // but as a defensive measure, we can log or prepare for it.
           developer.log("MainAppScaffold: User logged out, AuthWrapper should navigate.", name: "MainAppScaffold");
         }
       }
@@ -60,21 +57,26 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
   }
 
   Future<void> _performInitialChecks() async {
-    // Store the service reference before any async operations
-    final userProfileService = Provider.of<UserProfileService>(context, listen: false);
-    
-    // Check for updates
+    // Store the context and service reference before any async operations
+    if (!mounted) return;
+    final currentContext = context;
+    final userProfileService = Provider.of<UserProfileService>(currentContext, listen: false);
+
     if (mounted && !_hasCheckedUpdate) {
       developer.log("MainAppScaffold: Performing initial update check.", name: "MainAppScaffold");
-      await UpdateChecker.checkForUpdate(context);
+      if (!mounted) return;
+      await UpdateChecker.checkForUpdate(currentContext);
       if(mounted) setState(() => _hasCheckedUpdate = true);
     }
-
-    // Ensure user profile is loaded if not already
-    if (!mounted) return; // Add early return if widget is disposed
-    if (userProfileService.currentUserProfile == null && !userProfileService.isLoadingProfile && _currentUser != null) {
-      developer.log("MainAppScaffold: Initial profile fetch triggered.", name: "MainAppScaffold");
-      await userProfileService.fetchAndSetCurrentUserProfile();
+    
+    // Fetch the user's profile if it's not already loaded
+    if (!mounted) return;
+    if (_currentUser != null && userProfileService.currentUserProfile?.uid != _currentUser!.uid && !userProfileService.isLoadingProfile) {
+        developer.log("MainAppScaffold: Initial profile fetch triggered because current user profile doesn't match auth user or is null.", name: "MainAppScaffold");
+        await userProfileService.fetchAndSetCurrentUserProfile();
+    } else if (_currentUser != null && userProfileService.currentUserProfile == null && !userProfileService.isLoadingProfile) {
+        developer.log("MainAppScaffold: Current user exists but profile is null, attempting fetch.", name: "MainAppScaffold");
+        await userProfileService.fetchAndSetCurrentUserProfile();
     }
   }
 
@@ -83,23 +85,18 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       developer.log("MainAppScaffold: App Resumed.", name: "MainAppScaffold");
-      // Reset flag and check for updates again if app was paused for a while
-      // More sophisticated logic might be needed if you want to avoid too frequent checks
       if (mounted) {
-         _hasCheckedUpdate = false; // Reset to allow check on resume
-         _performInitialChecks(); // Perform checks again on resume
+         _hasCheckedUpdate = false; 
+         _performInitialChecks(); 
       }
     } else if (state == AppLifecycleState.paused) {
       developer.log("MainAppScaffold: App Paused.", name: "MainAppScaffold");
-      // No action needed on pause typically, but you could set _hasCheckedUpdate to false here
-      // if you want to ensure an update check on every resume.
-      // For now, _performInitialChecks on resume will handle it.
     }
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // Unregister observer
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -111,35 +108,41 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
-    // This check is important. If _currentUser becomes null (e.g., due to external logout/token expiry),
-    // AuthWrapper in main.dart should handle redirecting.
-    // Showing a loading indicator here prevents potential errors if _widgetOptions
-    // try to access user-specific data before redirection.
     if (_currentUser == null) {
       developer.log("MainAppScaffold: Current user is null, showing loading. AuthWrapper should redirect.", name: "MainAppScaffold");
       return const Scaffold(body: Center(child: CircularProgressIndicator(semanticsLabel: "Authenticating...")));
     }
 
+    // Check if UserProfile is loading. If so, show loading indicator for the whole scaffold.
+    // This prevents individual screens from trying to access a null profile prematurely.
+    final userProfileService = Provider.of<UserProfileService>(context);
+    if (userProfileService.isLoadingProfile && userProfileService.currentUserProfile == null) {
+        developer.log("MainAppScaffold: UserProfileService is loading initial profile. Showing loading screen.", name: "MainAppScaffold");
+        return const Scaffold(body: Center(child: CircularProgressIndicator(semanticsLabel: "Loading user profile...")));
+    }
+
+
     return Scaffold(
-      body: IndexedStack( // Using IndexedStack to preserve state of screens
+      body: IndexedStack(
         index: _selectedIndex,
         children: _widgetOptions,
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: <BottomNavigationBarItem>[
           BottomNavigationBarItem(
-            icon: Icon(_selectedIndex == 0 ? Icons.list_alt_rounded : Icons.list_alt_outlined), // Changed Home to List
+            icon: Icon(_selectedIndex == 0 ? Icons.list_alt_rounded : Icons.list_alt_outlined),
             label: '',
           ),
           BottomNavigationBarItem(
             icon: Icon(_selectedIndex == 1 ? Icons.camera_alt : Icons.camera_alt_outlined),
             label: '',
           ),
-          BottomNavigationBarItem( // <-- NEW: Map Item
+          BottomNavigationBarItem(
             icon: Icon(_selectedIndex == 2 ? Icons.map : Icons.map_outlined),
             label: '',
           ),
-          BottomNavigationBarItem(
+          BottomNavigationBarItem( // <-- NEW: Notifications Tab
+            // TODO: Add badge for unread notifications later
             icon: Icon(_selectedIndex == 3 ? Icons.notifications : Icons.notifications_outlined),
             label: '',
           ),
@@ -150,7 +153,7 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey[600], // Slightly darker grey for better visibility
+        unselectedItemColor: Colors.grey[600],
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
         showSelectedLabels: false,

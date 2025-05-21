@@ -1,5 +1,6 @@
+// lib/models/app_user_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Added for User type hint in fromFirestore
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AppUser {
   final String uid;
@@ -14,9 +15,12 @@ class AppUser {
   final String? area;
   final String? governmentId;
 
-  final String role; 
+  final String role;
   final Timestamp? createdAt;
   final String? profilePhotoUrl;
+  final List<String>? notificationTokens; // <-- NEWLY ADDED
+  final List<String>? subscribedIssueIds; // <-- ADDED from your schema for future use
+  final Map<String, bool>? notificationPreferences; // <-- ADDED for future use
 
   AppUser({
     required this.uid,
@@ -32,9 +36,11 @@ class AppUser {
     this.role = 'user',
     this.createdAt,
     this.profilePhotoUrl,
+    this.notificationTokens, // <-- ADDED
+    this.subscribedIssueIds, // <-- ADDED
+    this.notificationPreferences, // <-- ADDED
   });
 
-  // Corrected factory constructor signature
   factory AppUser.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc, User authUser, Map<String, dynamic>? claims) {
     final data = doc.data() ?? {};
     
@@ -42,8 +48,8 @@ class AppUser {
     String? effectiveDepartment = claims?['department'] as String? ?? data['department'] as String?;
 
     return AppUser(
-      uid: authUser.uid, // Use authUser.uid for consistency
-      email: authUser.email ?? data['email'] as String?, // Prioritize authUser email
+      uid: authUser.uid,
+      email: authUser.email ?? data['email'] as String?,
       username: data['username'] as String? ?? authUser.displayName?.split(' ').first ?? authUser.email?.split('@').first ?? 'User',
       fullName: data['fullName'] as String? ?? authUser.displayName,
       mobileNo: data['mobileNo'] as String?,
@@ -54,7 +60,10 @@ class AppUser {
       governmentId: data['governmentId'] as String?,
       role: effectiveRole,
       createdAt: data['createdAt'] as Timestamp?,
-      profilePhotoUrl: authUser.photoURL ?? data['profilePhotoUrl'] as String?, // Prioritize authUser photoURL
+      profilePhotoUrl: authUser.photoURL ?? data['profilePhotoUrl'] as String?,
+      notificationTokens: data['notificationTokens'] != null ? List<String>.from(data['notificationTokens']) : null, // <-- ADDED
+      subscribedIssueIds: data['subscribedIssueIds'] != null ? List<String>.from(data['subscribedIssueIds']) : null, // <-- ADDED
+      notificationPreferences: data['notificationPreferences'] != null ? Map<String, bool>.from(data['notificationPreferences']) : null, // <-- ADDED
     );
   }
 
@@ -73,10 +82,13 @@ class AppUser {
       'role': role,
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
       if (profilePhotoUrl != null) 'profilePhotoUrl': profilePhotoUrl,
+      if (notificationTokens != null) 'notificationTokens': notificationTokens, // <-- ADDED
+      if (subscribedIssueIds != null) 'subscribedIssueIds': subscribedIssueIds, // <-- ADDED
+      if (notificationPreferences != null) 'notificationPreferences': notificationPreferences, // <-- ADDED
     };
   }
 
   bool get isOfficial => role == 'official';
   bool get isAdmin => role == 'admin';
-  bool get isPendingOfficial => role == 'official'; // <<--- ADDED GETTER
+  bool get isPendingOfficial => role == 'official';
 }

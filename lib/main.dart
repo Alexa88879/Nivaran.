@@ -2,9 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // <-- ADDED
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
 import 'services/user_profile_service.dart'; 
+import 'services/notification_service.dart'; // <-- ADDED
 import 'screens/role_selection_screen.dart';
 import 'screens/auth/auth_options_screen.dart';
 import 'screens/auth/login_screen.dart';    
@@ -17,24 +19,71 @@ import 'screens/official/official_set_password_screen.dart';
 import 'screens/official/official_dashboard_screen.dart'; 
 import 'screens/main_app_scaffold.dart'; 
 import 'screens/public_dashboard_screen.dart';
-import 'dart:developer' as developer; // For logging
+import 'screens/notifications/notifications_screen.dart'; // For route definition
+import 'screens/feed/issue_details_screen.dart'; // Placeholder for issue details navigation
+import 'dart:developer' as developer;
+
+
+// Top-level background message handler (as required by FCM)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(); // Ensure Firebase is initialized for background isolates
+  developer.log("Handling a background message: ${message.messageId}", name: "MainBGHandler");
+  // You can add custom logic here if needed, e.g., saving to local DB
+  // For now, NotificationService handles most logic, or FCM displays the system notification.
+}
+
+// Global navigator key
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(); 
+  
+  // Set the background messaging handler for FCM
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   runApp(
     MultiProvider(
       providers: [
         Provider<AuthService>(create: (_) => AuthService()),
         ChangeNotifierProvider<UserProfileService>(create: (_) => UserProfileService()),
+        // Provide NotificationService, passing the navigatorKey
+        Provider<NotificationService>(create: (_) => NotificationService(navigatorKey: navigatorKey)),
       ],
       child: const MyApp(),
     ),
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize NotificationService after build, once providers are available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final notificationService = Provider.of<NotificationService>(context, listen: false);
+        notificationService.initialize().then((_) {
+            developer.log("NotificationService initialized from MyApp", name: "MyApp");
+            // After initialization, UserProfileService might need to update the token
+            // This is handled within UserProfileService's auth state listener now.
+        }).catchError((e) {
+            developer.log("Error initializing NotificationService from MyApp: $e", name: "MyApp");
+        });
+      }
+    });
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +101,7 @@ class MyApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'Nivaran',
+      navigatorKey: navigatorKey, // Assign the global key
       theme: ThemeData(
         primaryColor: Colors.black, 
         scaffoldBackgroundColor: Colors.white,
@@ -140,6 +190,13 @@ class MyApp extends StatelessWidget {
         '/official_dashboard':(context) => const OfficialDashboardScreen(),
 
         '/app': (context) => const MainAppScaffold(), 
+        '/notifications': (context) => const NotificationsScreen(), // Route for notifications screen
+        // Placeholder for issue details, ensure you have this screen or a similar one
+        '/issue_details': (context) {
+            final issueId = ModalRoute.of(context)!.settings.arguments as String?;
+            // Replace with your actual IssueDetailsScreen, passing the issueId
+            return IssueDetailsScreen(issueId: issueId ?? 'error_no_id');
+        },
         
         '/public_dashboard': (context) => const PublicDashboardScreen(),
       },
@@ -161,15 +218,13 @@ class InitialAuthCheck extends StatelessWidget {
 
         final User? authUser = authSnapshot.data;
 
-        if (authUser != null) { // User is logged in via Firebase Auth
+        if (authUser != null) {
           return Consumer<UserProfileService>(
             builder: (context, userProfileService, child) {
-              // Trigger profile fetch if not already loading or loaded for this user
               if (userProfileService.currentUserProfile?.uid != authUser.uid && !userProfileService.isLoadingProfile) {
                  developer.log("InitialAuthCheck: Auth user exists, fetching profile for ${authUser.uid}", name: "InitialAuthCheck");
-                 // Don't await here, let the UI update reactively
                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (context.mounted) { // Ensure context is still valid
+                    if (context.mounted) {
                         userProfileService.fetchAndSetCurrentUserProfile();
                     }
                  });
@@ -180,24 +235,19 @@ class InitialAuthCheck extends StatelessWidget {
                 return const Scaffold(body: Center(child: CircularProgressIndicator(semanticsLabel: "Loading profile...")));
               }
               
-              // Check email verification status AFTER profile service has had a chance to load
               if (!authUser.emailVerified) {
                 developer.log("InitialAuthCheck: User ${authUser.uid} email not verified. Navigating to /verify_email_screen", name: "InitialAuthCheck");
-                // Use WidgetsBinding to schedule navigation after build
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (ModalRoute.of(context)?.settings.name != '/verify_email_screen' && context.mounted) {
                      Navigator.of(context).pushNamedAndRemoveUntil('/verify_email_screen', (route) => false);
                   }
                 });
-                // Return a placeholder while navigation occurs to prevent flicker
                 return const Scaffold(body: Center(child: Text("Redirecting to email verification...")));
               }
 
-              // Email is verified, now check role from loaded profile
               if (userProfileService.currentUserProfile != null) {
                 developer.log("InitialAuthCheck: Profile loaded. Role: ${userProfileService.currentUserProfile!.role}", name: "InitialAuthCheck");
                 if (userProfileService.currentUserProfile!.isOfficial) {
-                  // For officials, also check if they have completed details entry
                   if (userProfileService.currentUserProfile!.department == null || 
                       userProfileService.currentUserProfile!.department!.isEmpty) {
                     developer.log("InitialAuthCheck: Official profile department is null/empty. Navigating to /official_details_entry", name: "InitialAuthCheck");
@@ -212,10 +262,8 @@ class InitialAuthCheck extends StatelessWidget {
                   return const OfficialDashboardScreen();
                 }
                 developer.log("InitialAuthCheck: Navigating to /app (citizen)", name: "InitialAuthCheck");
-                return const MainAppScaffold(); // Citizen
+                return const MainAppScaffold();
               } else {
-                // This case means authUser exists, email is verified, but profile is still null after attempting to load.
-                // This could be a transient state or an error in profile loading.
                 developer.log("InitialAuthCheck: Auth user verified, but profile is null. Showing loading/error.", name: "InitialAuthCheck");
                 return const Scaffold(body: Center(child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -230,7 +278,6 @@ class InitialAuthCheck extends StatelessWidget {
           );
         }
         
-        // No authenticated user
         developer.log("InitialAuthCheck: No authenticated user. Navigating to /role_selection", name: "InitialAuthCheck");
         return const RoleSelectionScreen();
       },

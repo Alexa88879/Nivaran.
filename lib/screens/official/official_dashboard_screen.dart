@@ -37,11 +37,10 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
 
   List<CategoryModel> _fetchedFilterCategories = []; 
   final List<String> _allUrgencyLevels = ['Low', 'Medium', 'High'];
-  // --- MODIFIED: Removed 'Addressed' ---
   final List<String> _allStatuses = ['Reported', 'Acknowledged', 'In Progress', 'Resolved', 'Rejected'];
   
   final FirestoreService _firestoreService = FirestoreService(); 
-  bool _isSeedingData = false; 
+  // Removed unused _isSeedingData field
 
   @override
   void initState() {
@@ -52,14 +51,11 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   
   Future<void> _fetchFilterCategories() async {
     if (!mounted) return;
-    // Show loading indicator for categories specifically if needed
-    // setState(() => _isLoadingCategories = true); 
     try {
       final categories = await _firestoreService.fetchIssueCategories();
       if (mounted) {
         setState(() {
           _fetchedFilterCategories = categories;
-          // _isLoadingCategories = false;
         });
         if (categories.isEmpty) {
           developer.log("No active categories fetched for filter dialog.", name: "OfficialDashboard");
@@ -68,7 +64,6 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     } catch (e) {
       developer.log("Error fetching categories for filter: $e", name: "OfficialDashboard");
       if (mounted) {
-        // setState(() => _isLoadingCategories = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Could not load filter categories."))
         );
@@ -76,54 +71,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     }
   }
 
-  Future<void> _seedCategoriesToFirestore() async {
-    if (!mounted) return;
-    setState(() => _isSeedingData = true);
-    try {
-      final String jsonString = await rootBundle.loadString('assets/data/initial_categories.json');
-      final List<dynamic> categoriesJson = json.decode(jsonString);
-      final CollectionReference categoriesCollection = FirebaseFirestore.instance.collection('issueCategories');
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      int categoriesAdded = 0;
-      int categoriesSkipped = 0;
-
-      for (var categoryData in categoriesJson) {
-        if (categoryData is Map<String, dynamic>) {
-          QuerySnapshot existing = await categoriesCollection
-              .where('name', isEqualTo: categoryData['name'])
-              .limit(1)
-              .get();
-          if (existing.docs.isEmpty) {
-            Map<String, dynamic> dataToSeed = {
-              'name': categoryData['name'],
-              'defaultDepartment': categoryData['defaultDepartment'],
-              'description': categoryData['description'] ?? '',
-              'isActive': categoryData['isActive'] ?? true,
-              'sortOrder': categoryData['sortOrder'] ?? 999,
-              'iconName': categoryData['iconName'],
-            };
-            batch.set(categoriesCollection.doc(), dataToSeed);
-            categoriesAdded++;
-          } else {
-            categoriesSkipped++;
-          }
-        }
-      }
-      if (categoriesAdded > 0) await batch.commit();
-      if (mounted) {
-        String message = categoriesAdded > 0 
-            ? '$categoriesAdded new categories seeded ($categoriesSkipped skipped).' 
-            : (categoriesSkipped > 0 ? 'All $categoriesSkipped categories already exist.' : 'No new categories to seed.');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-        _fetchFilterCategories(); 
-      }
-    } catch (e, s) {
-      developer.log('Error seeding categories: $e', name: 'DataSeeding', error: e, stackTrace: s);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error seeding categories: ${e.toString()}')));
-    } finally {
-      if (mounted) setState(() => _isSeedingData = false);
-    }
-  }
+  // Removed unused _seedCategoriesToFirestore method
 
   @override
   void didChangeDependencies() {

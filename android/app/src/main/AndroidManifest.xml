@@ -6,16 +6,25 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+                     android:maxSdkVersion="28" /> 
+                     <!-- For Android 10 (API 29) and above, direct external storage write is restricted.
+                          Consider Scoped Storage or MediaStore if targeting higher APIs for general file writes.
+                          READ_EXTERNAL_STORAGE is still needed for picking files via picker. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+                     android:maxSdkVersion="32" /> 
+                     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-    
-    <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/> <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.camera.autofocus" />
 
     <application
@@ -23,10 +32,20 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
+        <meta-data android:name="com.google.android.geo.API_KEY" android:value="@string/google_maps_api_key"/>
 
-        <meta-data android:name="com.google.android.geo.API_KEY"
-                   android:value="AIzaSyDmfPU-9SLcZR-DOvLf9aOqKHanN3TnNFU"/> 
-                   <activity
+                   <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="nivaran_default_channel" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        <!-- <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/colorPrimary" /> -->
+
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
