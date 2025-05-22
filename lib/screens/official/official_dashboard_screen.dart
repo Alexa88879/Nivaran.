@@ -1,18 +1,19 @@
 // lib/screens/official/official_dashboard_screen.dart
+import 'dart:async'; // Added for StreamSubscription
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/user_profile_service.dart';
 import '../../utils/update_checker.dart';
 import '../../models/issue_model.dart';
-import '../../models/category_model.dart'; // <<--- NEW IMPORT
+import '../../models/category_model.dart';
 import '../../services/auth_service.dart';
-import '../../services/firestore_service.dart'; // <<--- NEW IMPORT (if fetchIssueCategories is there)
+import '../../services/firestore_service.dart';
 import 'dart:developer' as developer;
 import 'package:intl/intl.dart';
 import 'official_statistics_screen.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'dart:convert';
+import '../../widgets/comments_dialog.dart';
+import '../notifications/notifications_screen.dart'; // <-- IMPORTED NotificationsScreen
 
 class OfficialDashboardScreen extends StatefulWidget {
   const OfficialDashboardScreen({super.key});
@@ -28,24 +29,30 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   int _selectedIndex = 0;
   bool _hasCheckedUpdate = false;
 
-  String? _selectedFilterCategory; // This will now store the category NAME for filtering
+  String? _selectedFilterCategory;
   String? _selectedFilterUrgency;
   String? _selectedFilterStatus;
   
   String _currentSortBy = 'timestamp'; 
   bool _isSortDescending = true;      
 
-  List<CategoryModel> _fetchedFilterCategories = []; // <<--- CHANGED: Store CategoryModel for filter
+  List<CategoryModel> _fetchedFilterCategories = [];
   final List<String> _allUrgencyLevels = ['Low', 'Medium', 'High'];
   final List<String> _allStatuses = ['Reported', 'Acknowledged', 'In Progress', 'Addressed', 'Resolved', 'Rejected'];
   
-  final FirestoreService _firestoreService = FirestoreService(); // For fetching categories
+  final FirestoreService _firestoreService = FirestoreService();
+
+  // --- Notification Badge State ---
+  bool _hasUnreadNotifications = false;
+  StreamSubscription? _notificationSubscription;
+  // --- End Notification Badge State ---
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _fetchFilterCategories(); // Fetch categories for the filter dialog
+    _fetchFilterCategories();
+    // Initial setup of streams will be triggered by didChangeDependencies
   }
   
   Future<void> _fetchFilterCategories() async {
@@ -70,16 +77,22 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_hasCheckedUpdate) {
-      UpdateChecker.checkForUpdate(context);
-      _hasCheckedUpdate = true;
-    }
-    _setupStream(); 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) { 
+        if (!_hasCheckedUpdate) {
+          UpdateChecker.checkForUpdate(context);
+          _hasCheckedUpdate = true;
+        }
+        _setupStream(); 
+        _setupNotificationListener(); // Setup notification listener
+      }
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _notificationSubscription?.cancel(); // Cancel notification subscription
     super.dispose();
   }
 
@@ -90,31 +103,72 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
         UpdateChecker.checkForUpdate(context);
         _hasCheckedUpdate = true;
       }
+       // Optionally, refresh notification status on resume
+      if (mounted) {
+        _setupNotificationListener();
+      }
     } else if (state == AppLifecycleState.paused) {
        _hasCheckedUpdate = false;
     }
   }
 
+  void _setupNotificationListener() {
+    if (!mounted) return;
+    final userProfileService = Provider.of<UserProfileService>(context, listen: false);
+    final officialUid = userProfileService.currentUserProfile?.uid;
+
+    if (officialUid != null && officialUid.isNotEmpty) {
+      _notificationSubscription?.cancel(); // Cancel previous subscription if any
+      _notificationSubscription = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: officialUid)
+          .where('isRead', isEqualTo: false)
+          .limit(1) // We only need to know if there's at least one unread
+          .snapshots()
+          .listen((snapshot) {
+        if (mounted) {
+          setState(() {
+            _hasUnreadNotifications = snapshot.docs.isNotEmpty;
+            developer.log("Unread notifications status: $_hasUnreadNotifications for user $officialUid", name: "OfficialDashboard");
+          });
+        }
+      }, onError: (error) {
+        developer.log("Error in notification listener: $error", name: "OfficialDashboard");
+        if (mounted) {
+          setState(() {
+            _hasUnreadNotifications = false;
+          });
+        }
+      });
+    } else {
+      // User not logged in or UID not available, ensure no badge is shown
+      if (mounted && _hasUnreadNotifications) {
+        setState(() {
+          _hasUnreadNotifications = false;
+        });
+      }
+      _notificationSubscription?.cancel();
+    }
+  }
+
+
   void _setupStream() {
-    // ... (existing _setupStream logic remains largely the same)
-    // It already uses _selectedFilterCategory (which is a String - category name)
-    // No change needed here for how the query is built based on _selectedFilterCategory
+    if (!mounted) return; 
     final userProfileService = Provider.of<UserProfileService>(context, listen: false);
     final officialDepartment = userProfileService.currentUserProfile?.department;
     final currentUsername = userProfileService.currentUserProfile?.username;
+    final officialUid = userProfileService.currentUserProfile?.uid;
+
 
     if (userProfileService.currentUserProfile != null && userProfileService.currentUserProfile!.isOfficial) {
-      if (officialDepartment != null) {
-        if (officialDepartment != _departmentName && mounted) {
-           setState(() {
-             _departmentName = officialDepartment;
-             _username = currentUsername ?? "Official";
-           });
-        } else if (_departmentName == "Loading..." && mounted) { 
-            setState(() {
-             _departmentName = officialDepartment;
-             _username = currentUsername ?? "Official";
-           });
+      if (officialDepartment != null && officialDepartment.isNotEmpty) {
+        if (officialDepartment != _departmentName || _username != currentUsername) {
+           if (mounted) {
+             setState(() {
+               _departmentName = officialDepartment;
+               _username = currentUsername ?? "Official";
+             });
+           }
         }
         
         Query query = FirebaseFirestore.instance
@@ -136,36 +190,49 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
           query = query.orderBy('timestamp', descending: true); 
         }
         
-        if(mounted){
-          setState(() {
-            _departmentIssuesStream = query.snapshots();
-          });
+        if(mounted){ 
+          // Only update the stream if it's null or the department has changed, to avoid unnecessary rebuilds
+          if (_departmentIssuesStream == null || officialDepartment != _departmentName || currentUsername != _username) { 
+            setState(() {
+              _departmentIssuesStream = query.snapshots();
+            });
+          }
         }
-        developer.log("OfficialDashboard: Stream setup with filters. Category: $_selectedFilterCategory, Urgency: $_selectedFilterUrgency, Status: $_selectedFilterStatus. Sort: $_currentSortBy Desc: $_isSortDescending", name: "OfficialDashboard");
+        developer.log("OfficialDashboard: Stream setup. Dept: $officialDepartment, Filters: Cat: $_selectedFilterCategory, Urg: $_selectedFilterUrgency, Stat: $_selectedFilterStatus. Sort: $_currentSortBy Desc: $_isSortDescending", name: "OfficialDashboard");
 
-      } else if (officialDepartment == null && _departmentName != "Not Assigned") {
-         developer.log("OfficialDashboard: User is official but department is null.", name: "OfficialDashboard");
+      } else { 
+         developer.log("OfficialDashboard: User is official but department is null or empty.", name: "OfficialDashboard");
          if(mounted){
            setState(() {
              _departmentName = "Not Assigned";
              _username = currentUsername ?? "Official";
-             _departmentIssuesStream = null;
+             _departmentIssuesStream = FirebaseFirestore.instance.collection('issues').where('assignedDepartment', isEqualTo: 'non_existent_value_to_get_empty_stream').snapshots();
            });
          }
       }
+       // Setup notification listener here as well, ensuring UID is available
+      _setupNotificationListener();
+
     } else if (userProfileService.currentUserProfile == null && !userProfileService.isLoadingProfile && mounted) {
-       developer.log("OfficialDashboard: CurrentUserProfile is null and not loading. Potential logout.", name: "OfficialDashboard");
+       developer.log("OfficialDashboard: User not official or profile not loaded. Clearing stream.", name: "OfficialDashboard");
+       if(mounted) {
+         setState(() {
+           _departmentName = "Access Denied";
+           _departmentIssuesStream = FirebaseFirestore.instance.collection('issues').where('assignedDepartment', isEqualTo: 'non_existent_value_to_get_empty_stream').snapshots();
+           _hasUnreadNotifications = false; // Ensure no badge if access denied
+         });
+       }
+        _notificationSubscription?.cancel();
     }
   }
 
   Future<void> _updateIssueStatus(String issueId, String newStatus) async {
-    // ... (existing code)
     try {
       Map<String, dynamic> updateData = {'status': newStatus};
       if (newStatus == 'Resolved') {
         updateData['resolutionTimestamp'] = FieldValue.serverTimestamp();
       }
-      updateData['lastStatusUpdateBy'] = _username;
+      updateData['lastStatusUpdateBy'] = _username; 
       updateData['lastStatusUpdateAt'] = FieldValue.serverTimestamp();
 
       await FirebaseFirestore.instance.collection('issues').doc(issueId).update(updateData);
@@ -177,13 +244,11 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   }
 
   String _formatTimestamp(Timestamp? timestamp) {
-    // ... (existing code)
     if (timestamp == null) return "N/A";
     return DateFormat('dd MMM yy, hh:mm a').format(timestamp.toDate());
   }
 
   Color _getUrgencyColor(String? urgency) {
-    // ... (existing code)
      switch (urgency?.toLowerCase()) {
       case 'high': return Colors.red.shade700;
       case 'medium': return Colors.orange.shade700;
@@ -208,7 +273,6 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    // <<--- CHANGED: Dropdown populated from _fetchedFilterCategories ---
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(labelText: 'Category'),
                       value: tempCategory,
@@ -239,24 +303,28 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                 TextButton(
                   child: const Text('Clear Filters'),
                   onPressed: () {
-                    setState(() {
-                      _selectedFilterCategory = null;
-                      _selectedFilterUrgency = null;
-                      _selectedFilterStatus = null;
+                    if (mounted) {
+                      setState(() {
+                        _selectedFilterCategory = null;
+                        _selectedFilterUrgency = null;
+                        _selectedFilterStatus = null;
+                      });
                       _setupStream(); 
-                    });
+                    }
                     Navigator.of(context).pop();
                   },
                 ),
                 ElevatedButton(
                   child: const Text('Apply'),
                   onPressed: () {
-                    setState(() {
-                      _selectedFilterCategory = tempCategory;
-                      _selectedFilterUrgency = tempUrgency;
-                      _selectedFilterStatus = tempStatus;
-                      _setupStream(); 
-                    });
+                     if (mounted) {
+                        setState(() {
+                          _selectedFilterCategory = tempCategory;
+                          _selectedFilterUrgency = tempUrgency;
+                          _selectedFilterStatus = tempStatus;
+                        });
+                        _setupStream();
+                     }
                     Navigator.of(context).pop();
                   },
                 ),
@@ -269,7 +337,6 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   }
 
   void _showSortOptions() {
-    // ... (existing code)
      showModalBottomSheet(
         context: context,
         builder: (BuildContext bc) {
@@ -286,70 +353,174 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   }
 
   void _applySort(String sortByField) {
-    // ... (existing code)
     Navigator.pop(context); 
-    setState(() {
-      if (_currentSortBy == sortByField) {
-        _isSortDescending = !_isSortDescending; 
-      } else {
-        _currentSortBy = sortByField;
-        _isSortDescending = true; 
-        if (sortByField == 'urgency') _isSortDescending = false; 
-      }
+    if (mounted) {
+      setState(() {
+        if (_currentSortBy == sortByField) {
+          _isSortDescending = !_isSortDescending; 
+        } else {
+          _currentSortBy = sortByField;
+          _isSortDescending = true; 
+          if (sortByField == 'urgency') _isSortDescending = false; 
+        }
+      });
       _setupStream(); 
-    });
+    }
   }
 
   Widget _buildBody() {
-    // ... (existing code)
     switch (_selectedIndex) {
       case 0: return _buildIssuesList();
       case 1: return const OfficialStatisticsScreen();
-      case 2: return Center(child: Text("Alerts Screen (TODO)\n(Coming Soon!)", textAlign: TextAlign.center, style: TextStyle(fontSize: 18, color: Colors.grey[600])));
+      case 2: return const NotificationsScreen(); // <-- Show NotificationsScreen
       case 3: return _buildProfileScreen();
       default: return _buildIssuesList();
     }
   }
 
   Widget _buildProfileScreen() {
-
-    
-    // ... (existing code)
     final userProfileService = Provider.of<UserProfileService>(context, listen: false);
     final profile = userProfileService.currentUserProfile;
     if (profile == null) return const Center(child: CircularProgressIndicator());
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+
+    final String displayName = profile.username ?? profile.fullName ?? profile.email?.split('@')[0] ?? 'Official';
+    final String? profileImageUrl = profile.profilePhotoUrl;
+
+    return ListView( 
+        padding: const EdgeInsets.all(0), 
         children: [
-          CircleAvatar(radius: 48, backgroundColor: Theme.of(context).colorScheme.secondaryContainer, child: Icon(Icons.account_circle, size: 64, color: Theme.of(context).colorScheme.onSecondaryContainer)),
-          const SizedBox(height: 16),
-          Text(profile.username ?? "Official", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(profile.email ?? "", style: const TextStyle(fontSize: 16, color: Colors.grey)),
-          const SizedBox(height: 8),
-          Text("Department: ${profile.department ?? "Not Assigned"}", style: const TextStyle(fontSize: 16)),
-          const SizedBox(height: 8),
-          Text("Role: Official", style: const TextStyle(fontSize: 16)),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(icon: const Icon(Icons.logout), label: const Text("Logout"), onPressed: () async {
-            final authService = Provider.of<AuthService>(context, listen: false);
-            await authService.signOut(context);
-          }),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 30.0, horizontal: 20.0),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.05), 
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 55, 
+                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                  backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
+                      ? NetworkImage(profileImageUrl)
+                      : null,
+                  child: (profileImageUrl == null || profileImageUrl.isEmpty) && displayName.isNotEmpty
+                      ? Text(
+                          displayName[0].toUpperCase(),
+                          style: TextStyle(fontSize: 40, color: Theme.of(context).colorScheme.onSecondaryContainer, fontWeight: FontWeight.w600),
+                        )
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  displayName,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  profile.email ?? "No email provided",
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[700], fontSize: 15),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Chip(
+                  avatar: Icon(Icons.work_outline_rounded, size: 18, color: Theme.of(context).primaryColorDark),
+                  label: Text(
+                    "Dept: ${profile.department ?? "Not Assigned"}",
+                    style: TextStyle(fontSize: 13, color: Theme.of(context).primaryColorDark, fontWeight: FontWeight.w500),
+                  ),
+                  backgroundColor: Theme.of(context).primaryColor.withAlpha(50),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                ),
+                 if (profile.designation != null && profile.designation!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    "Designation: ${profile.designation}",
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          _buildProfileOptionTile(
+            context,
+            icon: Icons.edit_outlined,
+            title: 'Edit Profile',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Edit Profile - Coming Soon!")));
+            },
+          ),
+          _buildProfileOptionTile(
+            context,
+            icon: Icons.lock_outline_rounded,
+            title: 'Change Password',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Change Password - Coming Soon!")));
+            },
+          ),
+          _buildProfileOptionTile(
+            context,
+            icon: Icons.history_edu_outlined,
+            title: 'My Activity Log',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("My Activity - Coming Soon!")));
+            },
+          ),
+           _buildProfileOptionTile(
+            context,
+            icon: Icons.notifications_none_outlined,
+            title: 'Notification Settings',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Notification Settings - Coming Soon!")));
+            },
+          ),
+          const Divider(height: 30, indent: 20, endIndent: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.logout_rounded, size: 20),
+              label: const Text("Logout", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade400,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 52),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 2,
+              ),
+              onPressed: () async {
+                final authService = Provider.of<AuthService>(context, listen: false);
+                await authService.signOut(context);
+              },
+            ),
+          ),
         ],
-      ),
+      );
+  }
+
+  Widget _buildProfileOptionTile(BuildContext context, {required IconData icon, required String title, VoidCallback? onTap}) {
+    return ListTile(
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary, size: 24),
+      title: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500)),
+      trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey[400]),
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
     );
   }
 
+
   Widget _buildIssuesList() {
-    // ... (existing code for loading/empty states)
-    final userProfileService = Provider.of<UserProfileService>(context, listen: false);
+    final userProfileService = Provider.of<UserProfileService>(context, listen: false); 
     if (_departmentName == "Loading..." || (userProfileService.isLoadingProfile && _departmentIssuesStream == null)) {
       return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Loading dashboard...", style: TextStyle(fontSize: 16))]));
     }
     if (_departmentName == "Not Assigned") {
       return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text('Your account is official but not yet assigned to a department. Please contact an administrator.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.orangeAccent))));
+    }
+     if (_departmentName == "Access Denied") {
+      return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text('Access Denied. This dashboard is for officials.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.redAccent))));
     }
     if (_departmentIssuesStream == null) {
         return Center(child: Text('Initializing issue feed for $_departmentName...', style: const TextStyle(fontSize: 16)));
@@ -358,7 +529,6 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     return StreamBuilder<QuerySnapshot>(
       stream: _departmentIssuesStream,
       builder: (context, snapshot) {
-        // ... (existing builder logic)
         if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -367,7 +537,10 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
           return Center(child: Text('Error loading issues: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(child: Text('No issues match current filters for $_departmentName.', style: TextStyle(fontSize: 16, color: Colors.grey[700]), textAlign: TextAlign.center,));
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text('No issues match current filters for $_departmentName.', style: TextStyle(fontSize: 16, color: Colors.grey[700]), textAlign: TextAlign.center,),
+          ));
         }
 
         final issuesDocs = snapshot.data!.docs;
@@ -380,12 +553,12 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
             final issue = Issue.fromFirestore(issueData, issueId);
 
             return Card(
-              // ... (rest of the Card UI remains the same)
               margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 2.5, 
+              shadowColor: Colors.grey.withAlpha(100),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), 
               child: Padding(
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.all(16.0), 
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -397,85 +570,110 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Reported by: ${issue.username}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                              Text("On: ${_formatTimestamp(issue.timestamp)}", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                              Text("Reported by: ${issue.username}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
+                              const SizedBox(height: 2),
+                              Text("On: ${_formatTimestamp(issue.timestamp)}", style: TextStyle(color: Colors.grey[700], fontSize: 12.5)), 
                             ],
                           ),
                         ),
                         PopupMenuButton<String>(
-                          icon: Icon(Icons.more_vert, color: Colors.grey[700]),
+                          icon: Icon(Icons.more_vert, color: Colors.grey[800]), 
                           tooltip: "Update Status",
                           onSelected: (String newStatus) => _updateIssueStatus(issue.id, newStatus),
                           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                             _buildPopupMenuItem('Acknowledged', issue.status),
                             _buildPopupMenuItem('In Progress', issue.status),
-                            _buildPopupMenuItem('Addressed', issue.status),
+                            _buildPopupMenuItem('Addressed', issue.status), 
                             _buildPopupMenuItem('Resolved', issue.status),
+                            _buildPopupMenuItem('Rejected', issue.status),
                           ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(issue.description, style: const TextStyle(fontSize: 14.5, height: 1.3), maxLines: 3, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
+                    Text(issue.description, style: const TextStyle(fontSize: 15, height: 1.4, color: Colors.black87), maxLines: 3, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 10),
                     Wrap(
                       spacing: 8.0,
-                      runSpacing: 4.0,
+                      runSpacing: 6.0,
                       children: [
                         Chip(
-                          avatar: Icon(Icons.category_outlined, size: 15, color: Theme.of(context).colorScheme.primary),
-                          label: Text(issue.category, style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w500)),
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer.withAlpha((0.4 * 255).round()),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          avatar: Icon(Icons.category_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
+                          label: Text(issue.category, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w500)),
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer.withAlpha(100), 
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         if (issue.urgency != null && issue.urgency!.isNotEmpty)
                           Chip(
-                            avatar: Icon(Icons.priority_high_rounded, size: 15, color: _getUrgencyColor(issue.urgency)),
-                            label: Text(issue.urgency!, style: TextStyle(fontSize: 11.5, color: _getUrgencyColor(issue.urgency), fontWeight: FontWeight.w500)),
-                            backgroundColor: _getUrgencyColor(issue.urgency).withAlpha((0.15 * 255).round()),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            avatar: Icon(Icons.priority_high_rounded, size: 16, color: _getUrgencyColor(issue.urgency)),
+                            label: Text(issue.urgency!, style: TextStyle(fontSize: 12, color: _getUrgencyColor(issue.urgency), fontWeight: FontWeight.w500)),
+                            backgroundColor: _getUrgencyColor(issue.urgency).withAlpha(40), 
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         if (issue.tags != null && issue.tags!.isNotEmpty)
                           ...issue.tags!.map((tag) => Chip(
-                                label: Text("#$tag", style: TextStyle(fontSize: 10.5, color: Colors.blueGrey[700])),
-                                backgroundColor: Colors.blueGrey[50],
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                label: Text("#$tag", style: TextStyle(fontSize: 11, color: Colors.blueGrey[800])),
+                                backgroundColor: Colors.blueGrey[100], 
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               )),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
-                        Icon(Icons.location_on_outlined, size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Expanded(child: Text(issue.location.address, style: TextStyle(fontSize: 12, color: Colors.grey[700], fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis)),
+                        Icon(Icons.location_on_outlined, size: 15, color: Colors.grey[700]),
+                        const SizedBox(width: 5),
+                        Expanded(child: Text(issue.location.address, style: TextStyle(fontSize: 12.5, color: Colors.grey[800], fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis)),
                       ],
                     ),
                     if (issue.imageUrl.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 10.0, bottom: 6.0),
+                        padding: const EdgeInsets.only(top: 12.0, bottom: 8.0),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(10), 
                           child: Image.network(
                             issue.imageUrl,
-                            height: 180,
+                            height: 190, 
                             width: double.infinity,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(height: 180, color: Colors.grey[200], child: Center(child: Icon(Icons.broken_image, color: Colors.grey[400]))),
-                            loadingBuilder: (context, child, progress) => progress == null ? child : Container(height: 180, color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())),
+                            errorBuilder: (context, error, stackTrace) => Container(height: 190, color: Colors.grey[200], child: Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40))),
+                            loadingBuilder: (context, child, progress) => progress == null ? child : Container(height: 190, color: Colors.grey[200], child: const Center(child: CircularProgressIndicator(strokeWidth: 2.5))),
                           ),
                         ),
                       ),
-                    Divider(height: 20, thickness: 0.5, color: Colors.grey[300]),
+                    Divider(height: 24, thickness: 0.8, color: Colors.grey[350]), 
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.spaceAround, 
                       children: [
-                        _buildInfoChip(Icons.thumb_up_alt_outlined, "${issue.upvotes} Upvotes", Colors.green),
-                        _buildInfoChip(Icons.thumb_down_alt_outlined, "${issue.downvotes} Downvotes", Colors.red),
-                        _buildInfoChip(Icons.comment_outlined, "${issue.commentsCount} Comments", Colors.blueAccent),
+                        _buildActionChip(
+                          icon: Icons.thumb_up_alt_outlined,
+                          label: "${issue.upvotes} Upvotes",
+                          color: Colors.green.shade600,
+                          onTap: null, 
+                        ),
+                        _buildActionChip(
+                          icon: Icons.thumb_down_alt_outlined,
+                          label: "${issue.downvotes} Downvotes",
+                          color: Colors.red.shade600,
+                          onTap: null, 
+                        ),
+                        _buildActionChip(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: "${issue.commentsCount} Comments",
+                          color: Colors.blueAccent.shade700,
+                          onTap: () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => CommentsDialog(
+                                issueId: issue.id,
+                                issueDescription: issue.description,
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ],
@@ -489,25 +687,50 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   }
 
   PopupMenuItem<String> _buildPopupMenuItem(String value, String currentStatus) {
-    // ... (existing code)
     return PopupMenuItem<String>(value: value, enabled: value != currentStatus, child: Text(value, style: TextStyle(color: value == currentStatus ? Colors.grey : null)));
   }
 
-  Widget _buildInfoChip(IconData icon, String label, Color color) {
-    // ... (existing code)
-     return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 15, color: color.withAlpha((0.8 * 255).round())),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 11.5, color: color, fontWeight: FontWeight.w500)),
-      ],
+  Widget _buildActionChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    VoidCallback? onTap, 
+  }) {
+    return InkWell(
+      onTap: onTap, 
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 7.0), 
+        decoration: BoxDecoration(
+          color: onTap != null ? color.withAlpha(30) : Colors.transparent, 
+          border: Border.all(
+            color: onTap != null ? color.withAlpha(150) : color.withAlpha(100), 
+            width: 1.2,
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color), 
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5, 
+                color: color,
+                fontWeight: FontWeight.w600, 
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
-    // ... (existing build method structure)
     final userProfileService = Provider.of<UserProfileService>(context);
     final authService = Provider.of<AuthService>(context, listen: false);
     
@@ -517,14 +740,21 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
 
     if (!(userProfileService.currentUserProfile?.isOfficial ?? false)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).pushNamedAndRemoveUntil('/role_selection', (route) => false);
+        if (mounted) { 
+          Navigator.of(context).pushNamedAndRemoveUntil('/role_selection', (route) => false);
+        }
       });
       return Scaffold(appBar: AppBar(title: const Text('Access Denied')), body: const Center(child: Text('Redirecting...', style: TextStyle(fontSize: 16))));
     }
     
     return Scaffold(
       appBar: AppBar(
-        title: Text('${_departmentName == "Not Assigned" || _departmentName == "Loading..." ? "Official Dashboard" : _departmentName} Issues', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+        title: Text(
+          _departmentName == "Not Assigned" || _departmentName == "Loading..." || _departmentName == "Access Denied"
+              ? "Official Dashboard"
+              : '$_departmentName Issues',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list_alt),
@@ -536,21 +766,57 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
             tooltip: 'Sort Issues',
             onPressed: _showSortOptions,
           ),
-          IconButton(icon: const Icon(Icons.logout_outlined), tooltip: 'Logout', onPressed: () async => await authService.signOut(context)),
+          IconButton(icon: const Icon(Icons.logout_outlined), tooltip: 'Logout', onPressed: () async {
+             await authService.signOut(context);
+          }),
         ],
       ),
       body: _buildBody(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          if (mounted) { 
+             setState(() => _selectedIndex = index);
+          }
+        },
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey[600],
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.list_alt_rounded), label: 'Issues'),
-          BottomNavigationBarItem(icon: Icon(Icons.bar_chart_rounded), label: 'Stats'),
-          BottomNavigationBarItem(icon: Icon(Icons.notifications_active_outlined), label: 'Alerts'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_circle_outlined), label: 'Profile'),
+        items: [
+          BottomNavigationBarItem(
+            icon: Icon(_selectedIndex == 0 ? Icons.list_alt_rounded : Icons.list_alt_outlined), 
+            label: 'Issues'
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(_selectedIndex == 1 ? Icons.bar_chart_rounded : Icons.bar_chart_outlined), 
+            label: 'Stats'
+          ),
+          BottomNavigationBarItem(
+            icon: Stack( // Wrap with Stack for badge
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Icon(_selectedIndex == 2 ? Icons.notifications_active : Icons.notifications_active_outlined),
+                if (_hasUnreadNotifications)
+                  Positioned(
+                    top: -3,
+                    right: -3,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            label: 'Alerts',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(_selectedIndex == 3 ? Icons.account_circle : Icons.account_circle_outlined), 
+            label: 'Profile'
+          ),
         ],
       ),
     );
