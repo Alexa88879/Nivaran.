@@ -23,6 +23,23 @@ import '../../models/category_model.dart';
 import '../../secrets.dart'; 
 import 'dart:developer' as developer;
 
+// Helper class for language options
+class SpeechLanguage {
+  final String code;
+  final String name;
+  const SpeechLanguage(this.code, this.name);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SpeechLanguage &&
+          runtimeType == other.runtimeType &&
+          code == other.code;
+
+  @override
+  int get hashCode => code.hashCode;
+}
+
 class ReportDetailsScreen extends StatefulWidget {
   final String imagePath;
   const ReportDetailsScreen({super.key, required this.imagePath});
@@ -62,11 +79,38 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   bool _isTranslatingText = false; 
   bool _isSuggestingCategory = false; 
   String? _originalTranscribedText; 
-  String? _sttDetectedLanguageCode; 
+  
+  // --- Language Selection ---
+  // Expanded list of supported Indian languages
+  static const List<SpeechLanguage> _supportedSpokenLanguages = [
+    SpeechLanguage('en-IN', 'English (India)'),
+    SpeechLanguage('hi-IN', 'हिन्दी (Hindi)'),
+    SpeechLanguage('bn-IN', 'বাংলা (Bengali)'),
+    SpeechLanguage('ta-IN', 'தமிழ் (Tamil)'),
+    SpeechLanguage('te-IN', 'తెలుగు (Telugu)'),
+    SpeechLanguage('mr-IN', 'मराठी (Marathi)'),
+    SpeechLanguage('gu-IN', 'ગુજરાતી (Gujarati)'),
+    SpeechLanguage('kn-IN', 'ಕನ್ನಡ (Kannada)'),
+    SpeechLanguage('ml-IN', 'മലയാളം (Malayalam)'),
+    SpeechLanguage('pa-Guru-IN', 'ਪੰਜਾਬੀ (Punjabi)'),
+    SpeechLanguage('ur-IN', 'اردو (Urdu - India)'),
+    SpeechLanguage('as-IN', 'অসমীয়া (Assamese)'),
+    SpeechLanguage('or-IN', 'ଓଡ଼ିଆ (Odia)'),
+    SpeechLanguage('mai-IN', 'मैथिली (Maithili)'),
+    SpeechLanguage('doi-IN', 'डोगरी (Dogri)'),
+    SpeechLanguage('ne-IN', 'नेपाली (Nepali - India)'),
+    // Add more BCP-47 codes as needed and verify Google STT support for them with AMR_WB
+  ];
+  late SpeechLanguage _selectedSpokenLanguage;
+
 
   @override
   void initState() {
     super.initState();
+    _selectedSpokenLanguage = _supportedSpokenLanguages.firstWhere(
+        (lang) => lang.code == 'en-IN', 
+        orElse: () => _supportedSpokenLanguages.first
+    );
     _audioRecorder = FlutterSoundRecorder(); 
     _initializeAudioRecorder();
     _fetchInitialData();
@@ -141,12 +185,11 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       if (mounted) {
         setState(() {
           _isRecording = true;
-          _descriptionController.text = "Listening...";
+          _descriptionController.text = "Listening in ${_selectedSpokenLanguage.name}...";
           _originalTranscribedText = null; 
-          _sttDetectedLanguageCode = null; 
         });
       }
-      developer.log("Started recording to: $_recordedAudioPath (AMR_WB) at $_targetSampleRate Hz, 1 channel", name: "ReportDetailsScreen");
+      developer.log("Started recording to: $_recordedAudioPath (AMR_WB) at $_targetSampleRate Hz, 1 channel, Language: ${_selectedSpokenLanguage.code}", name: "ReportDetailsScreen");
     } catch (e) {
       developer.log("Error starting recording: $e", name: "ReportDetailsScreen");
       if (mounted) {
@@ -201,16 +244,12 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
           List<int> audioBytes = await audioFile.readAsBytes();
           String base64Audio = base64Encode(audioBytes);
           
-          Map<String, String?>? sttResult = await _googleCloudSpeechToText(base64Audio);
+          Map<String, String?>? sttResult = await _googleCloudSpeechToText(base64Audio, _selectedSpokenLanguage.code);
 
           if (mounted) setState(() => _isProcessingSTT = false);
 
           String? transcribedText = sttResult?['transcript'];
-          if (mounted) {
-            setState(() {
-              _sttDetectedLanguageCode = sttResult?['detectedLanguageCode'];
-            });
-          }
+          // String sttReportedLanguage = sttResult?['detectedLanguageCode']; // Less critical now
 
           if (transcribedText != null && transcribedText.isNotEmpty) {
             if (mounted) {
@@ -220,11 +259,11 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
             }
             String finalTextForDescription = transcribedText;
             
-            bool needsProcessingForEnglish = true; 
+            bool processForEnglish = true; 
 
-            if (needsProcessingForEnglish) {
+            if (processForEnglish) {
               if (mounted) setState(() => _isTranslatingText = true);
-              String? processedText = await _translateOrRefineToIndianEnglishGemini(transcribedText, sourceLanguage: _sttDetectedLanguageCode);
+              String? processedText = await _translateOrRefineToIndianEnglishGemini(transcribedText, sourceLanguage: _selectedSpokenLanguage.code);
               if (mounted) setState(() => _isTranslatingText = false);
               if (processedText != null && processedText.isNotEmpty) {
                 finalTextForDescription = processedText;
@@ -276,19 +315,16 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     } 
   }
 
-  Future<Map<String, String?>?> _googleCloudSpeechToText(String base64Audio) async {
+  Future<Map<String, String?>?> _googleCloudSpeechToText(String base64Audio, String languageCodeForSTT) async {
     final String apiKey = googleSpeechToTextApiKey; 
     const String url = 'https://speech.googleapis.com/v1/speech:recognize';
     
-    List<String> languageCodes = ["en-IN", "hi-IN", "bn-IN", "ta-IN", "te-IN", "mr-IN", "gu-IN", "kn-IN", "ml-IN"];
-
     final Map<String, dynamic> requestBody = {
       "config": {
         "encoding": "AMR_WB", 
         "sampleRateHertz": _targetSampleRate, 
         "audioChannelCount": 1, 
-        "languageCode": "hi-IN", // Prioritize Hindi for STT
-        "alternativeLanguageCodes": languageCodes.where((lc) => lc != "hi-IN").toList(), // Other Indian languages and en-IN as alternatives
+        "languageCode": languageCodeForSTT, 
         "enableAutomaticPunctuation": true,
         "enableWordConfidence": true, 
         "model": "default" 
@@ -315,33 +351,25 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
 
         if (responseData['results'] != null && responseData['results'].isNotEmpty) {
           String fullTranscript = "";
-          String? detectedLangCode; 
-
-          var firstResult = responseData['results'][0];
-          if (firstResult['languageCode'] != null) {
-            detectedLangCode = firstResult['languageCode'] as String;
-          }
+          String? sttReturnedLanguageCode = responseData['results'][0]['languageCode'] as String?;
 
           for (int i = 0; i < responseData['results'].length; i++) {
             var result = responseData['results'][i];
             if (result['alternatives'] != null && result['alternatives'].isNotEmpty) {
               fullTranscript += (result['alternatives'][0]['transcript'] as String? ?? "") + " ";
-              if (detectedLangCode == null && result['alternatives'][0]['languageCode'] != null) {
-                detectedLangCode = result['alternatives'][0]['languageCode'] as String;
-              }
             }
           }
           fullTranscript = fullTranscript.trim();
           
-          if (detectedLangCode != null) {
-            developer.log("Google STT detected language: $detectedLangCode", name: "ReportDetailsScreen");
+          if (sttReturnedLanguageCode != null) {
+            developer.log("Google STT (in-result) detected language: $sttReturnedLanguageCode (User selected: $languageCodeForSTT)", name: "ReportDetailsScreen");
           } else {
-            developer.log("Google STT did not explicitly return a detected language code.", name: "ReportDetailsScreen");
+             developer.log("Google STT did not explicitly return a language code in the result object. User selected: $languageCodeForSTT", name: "ReportDetailsScreen");
           }
           
           if (fullTranscript.isNotEmpty) {
             developer.log("Google STT Transcription: $fullTranscript", name: "ReportDetailsScreen");
-            return {'transcript': fullTranscript, 'detectedLanguageCode': detectedLangCode};
+            return {'transcript': fullTranscript, 'detectedLanguageCode': sttReturnedLanguageCode ?? languageCodeForSTT};
           } else {
             developer.log("Google STT: 'results' array was present but alternatives or transcript was empty.", name: "ReportDetailsScreen");
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Speech recognized, but no text could be transcribed. Try again.")));
@@ -376,25 +404,23 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     if (textToProcess.isEmpty) return null;
     
     String instruction;
-    String exampleInput = "Hamare gaon mein nala kharab ho gaya hai. Kripya use theek karwaen.";
-    String exampleOutput = "The drain in our village is damaged. Please get it repaired.";
+    String exampleInput = "हमारे गांव में नाला खराब हो गया है। कृपया उसे ठीक करवाएं।"; 
+    String exampleOutput = "The drain in our village is damaged; please arrange for its repair."; 
 
     if (sourceLanguage != null && sourceLanguage.toLowerCase().startsWith('en')) {
-      instruction = "Refine the following English text, which may contain Hinglish or colloquial Indian English phrases, into a single, clear, standard Indian English sentence. For example, if the input implies a problem and a request for repair, the output should be direct and formal like '$exampleOutput'. Output only the refined sentence.";
-    } else if (sourceLanguage != null) {
-      instruction = "Translate the following text from its original Indian language (likely $sourceLanguage) into a single, clear, standard Indian English sentence. For example, if the input is '$exampleInput', the output should be '$exampleOutput'. Output only the translated sentence.";
-    } else {
-      instruction = "The following text might be in an Indian language or Hinglish. Convert it into a single, clear, standard Indian English sentence. For example, if the input is '$exampleInput', the output should be '$exampleOutput'. Output only the converted sentence.";
+      instruction = "Refine the following English text, which may contain Hinglish or colloquial Indian English phrases, into a single, clear, standard Indian English sentence. Output only the refined sentence.";
+    } else if (sourceLanguage != null) { 
+      instruction = "Translate the following text from its original Indian language (spoken as $sourceLanguage) into a single, clear, standard Indian English sentence. Output only the translated sentence.";
+    } else { 
+      instruction = "The following text might be in an Indian language or Hinglish. Convert it into a single, clear, standard Indian English sentence. Output only the converted sentence.";
     }
     
-    // Constructing a more direct prompt that asks for a specific style of output
-    String prompt = "$instruction\n\nInput Text: \"$textToProcess\"\n\nDesired Output Format (single, standard Indian English sentence):";
-
+    String prompt = "$instruction For example, if the input implies a problem like '$exampleInput', the output should be like '$exampleOutput'.\n\nInput Text: \"$textToProcess\"\n\nOutput (only the single processed sentence):";
 
     final payload = {
       "contents": [{"parts": [{"text": prompt}]}],
       "generationConfig": {
-        "temperature": 0.2, // Lower temperature for more factual/direct translation
+        "temperature": 0.2, 
         "maxOutputTokens": textToProcess.length * 4 + 150, 
         "stopSequences": ["\n\n", "Input Text:", "Output:", "Desired Output Format:"] 
       }
@@ -422,7 +448,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
           List<String> prefixesToRemove = [
             "Output (single Indian English sentence):", "Output:", "The refined sentence is:",
             "Here is the refined sentence:", "Translation:", "Standard Indian English:",
-            "Desired Output Format (single, standard Indian English sentence):" // Added this potential prefix
+            "Desired Output Format (single, standard Indian English sentence):" 
           ];
           for (String prefix in prefixesToRemove) {
             if (processedText.toLowerCase().startsWith(prefix.toLowerCase())) {
@@ -451,7 +477,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
 
 
   Future<void> _suggestCategoryGemini(String descriptionText) async {
-    // ... (This function remains largely the same)
     if (descriptionText.isEmpty) return;
     if (!mounted) return;
     setState(() => _isSuggestingCategory = true);
@@ -518,7 +543,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   static final CategoryModel null_category_model = CategoryModel(id: '', name: '', defaultDepartment: '');
 
   Future<void> _submitReport() async {
-    // ... (This function remains the same)
     final userProfileService = Provider.of<UserProfileService>(context, listen: false);
     final AppUser? appUser = userProfileService.currentUserProfile;
 
@@ -575,7 +599,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
         'affectedUsersCount': 1,
         'affectedUserIds': [appUser.uid],
         'originalSpokenText': (_originalTranscribedText != null && _originalTranscribedText!.trim().toLowerCase() != _descriptionController.text.trim().toLowerCase()) ? _originalTranscribedText : null,
-        'detectedSpokenLanguage': _sttDetectedLanguageCode,
+        'userInputLanguage': _selectedSpokenLanguage.code, 
       };
 
       await _firestoreService.addIssue(issueData);
@@ -661,6 +685,38 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                       ),
                     ),
                     SizedBox(height: screenHeight * 0.02),
+                    
+                    Text("Spoken Language for Recording", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    SizedBox(height: screenHeight * 0.008),
+                    DropdownButtonFormField<SpeechLanguage>(
+                      decoration: InputDecoration(
+                        hintText: 'Select Language',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0), borderSide: BorderSide(color: Colors.grey[350]!)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0), borderSide: BorderSide(color: Colors.grey[350]!)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0), borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5)),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
+                      ),
+                      value: _selectedSpokenLanguage,
+                      isExpanded: true,
+                      items: _supportedSpokenLanguages.map((SpeechLanguage language) {
+                        return DropdownMenuItem<SpeechLanguage>(
+                          value: language,
+                          child: Text(language.name, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
+                        );
+                      }).toList(),
+                      onChanged: (SpeechLanguage? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            _selectedSpokenLanguage = newValue;
+                          });
+                           developer.log("User selected spoken language: ${newValue.name} (${newValue.code})", name: "ReportDetailsScreen");
+                        }
+                      },
+                    ),
+                    SizedBox(height: screenHeight * 0.02),
+
 
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -673,7 +729,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                               SizedBox(height: screenHeight * 0.008),
                               CustomTextField(
                                 controller: _descriptionController,
-                                hintText: _isRecording ? 'Listening...' : (isAnyProcessing ? 'Processing...' : 'Type or speak description...'),
+                                hintText: _isRecording ? 'Listening in ${_selectedSpokenLanguage.name}...' : (isAnyProcessing ? 'Processing...' : 'Type or speak description...'),
                                 maxLines: 4,
                                 keyboardType: TextInputType.multiline,
                                 textCapitalization: TextCapitalization.sentences,
@@ -699,7 +755,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                               color: _isRecording ? Colors.red.shade700 : Theme.of(context).primaryColor,
                               size: 30,
                             ),
-                            tooltip: _isRecording ? "Stop Recording" : "Record Description",
+                            tooltip: _isRecording ? "Stop Recording" : "Record Description in ${_selectedSpokenLanguage.name}",
                             onPressed: (_audioRecorderInitialized && !isAnyProcessing)
                                 ? (_isRecording ? _stopRecordingAndProcessAudio : _startRecording)
                                 : null, 
@@ -732,7 +788,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Original transcription (Language: ${_sttDetectedLanguageCode ?? 'Unknown'}):", 
+                              "Original transcription (Spoken in: ${_selectedSpokenLanguage.name}):", 
                               style: textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500, color: Colors.grey[700]),
                             ),
                             const SizedBox(height: 4),
