@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'dart:convert'; // For base64Encode and jsonEncode
 import 'dart:async'; 
+import 'dart:typed_data'; // For Uint8List
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -20,6 +21,7 @@ import '../../widgets/custom_text_field.dart';
 import '../../widgets/auth_button.dart';
 import '../../models/app_user_model.dart';
 import '../../models/category_model.dart';
+import '../../models/issue_model.dart'; // For LocationModel
 import '../../secrets.dart'; 
 import 'dart:developer' as developer;
 
@@ -61,8 +63,8 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   List<CategoryModel> _fetchedCategories = [];
   CategoryModel? _selectedCategoryModel;
 
-  String? _selectedUrgency;
-  final List<String> _urgencyLevels = ['Low', 'Medium', 'High'];
+  // String? _selectedUrgency; // Removed manual urgency selection
+  // final List<String> _urgencyLevels = ['Low', 'Medium', 'High']; // Removed
 
   final LocationService _locationService = LocationService();
   final ImageUploadService _imageUploadService = ImageUploadService();
@@ -79,9 +81,14 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   bool _isTranslatingText = false; 
   bool _isSuggestingCategory = false; 
   String? _originalTranscribedText; 
+  late SpeechLanguage _selectedSpokenLanguage;
   
-  // --- Language Selection ---
-  // Expanded list of supported Indian languages
+  // --- AI Urgency Detection State ---
+  String? _detectedUrgency;
+  bool _isDetectingUrgency = false;
+  // --- End AI Urgency Detection State ---
+
+
   static const List<SpeechLanguage> _supportedSpokenLanguages = [
     SpeechLanguage('en-IN', 'English (India)'),
     SpeechLanguage('hi-IN', 'हिन्दी (Hindi)'),
@@ -99,9 +106,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     SpeechLanguage('mai-IN', 'मैथिली (Maithili)'),
     SpeechLanguage('doi-IN', 'डोगरी (Dogri)'),
     SpeechLanguage('ne-IN', 'नेपाली (Nepali - India)'),
-    // Add more BCP-47 codes as needed and verify Google STT support for them with AMR_WB
   ];
-  late SpeechLanguage _selectedSpokenLanguage;
 
 
   @override
@@ -187,6 +192,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
           _isRecording = true;
           _descriptionController.text = "Listening in ${_selectedSpokenLanguage.name}...";
           _originalTranscribedText = null; 
+          _detectedUrgency = null; // Clear previous detected urgency
         });
       }
       developer.log("Started recording to: $_recordedAudioPath (AMR_WB) at $_targetSampleRate Hz, 1 channel, Language: ${_selectedSpokenLanguage.code}", name: "ReportDetailsScreen");
@@ -241,7 +247,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
             return;
           }
 
-          List<int> audioBytes = await audioFile.readAsBytes();
+          Uint8List audioBytes = await audioFile.readAsBytes();
           String base64Audio = base64Encode(audioBytes);
           
           Map<String, String?>? sttResult = await _googleCloudSpeechToText(base64Audio, _selectedSpokenLanguage.code);
@@ -249,7 +255,6 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
           if (mounted) setState(() => _isProcessingSTT = false);
 
           String? transcribedText = sttResult?['transcript'];
-          // String sttReportedLanguage = sttResult?['detectedLanguageCode']; // Less critical now
 
           if (transcribedText != null && transcribedText.isNotEmpty) {
             if (mounted) {
@@ -277,7 +282,16 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
               if (finalTextForDescription.trim().toLowerCase() == _originalTranscribedText?.trim().toLowerCase()) {
                   setState(() { _originalTranscribedText = null; }); 
               }
-              _suggestCategoryGemini(finalTextForDescription); 
+              // Call category suggestion and then urgency detection
+              await _suggestCategoryGemini(finalTextForDescription);
+              if (mounted && widget.imagePath.isNotEmpty && _currentPosition != null) {
+                 Uint8List imageBytesForUrgency = await File(widget.imagePath).readAsBytes();
+                 String imageBase64ForUrgency = base64Encode(imageBytesForUrgency);
+                 LocationModel locModel = LocationModel(latitude: _currentPosition!.latitude, longitude: _currentPosition!.longitude, address: _currentAddress ?? "Unknown address");
+                 await _detectUrgencyGemini(finalTextForDescription, imageBase64ForUrgency, locModel);
+              } else {
+                developer.log("Skipping urgency detection: image, location, or description missing.", name: "ReportDetailsScreen");
+              }
             }
           } else {
              if (mounted) {
@@ -309,6 +323,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
           _isProcessingSTT = false;
           _isTranslatingText = false;
           _isSuggestingCategory = false;
+          _isDetectingUrgency = false;
           _descriptionController.clear();
         });
       }
@@ -475,6 +490,88 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     return null; 
   }
 
+  Future<void> _detectUrgencyGemini(String description, String imageBase64, LocationModel location) async {
+    if (description.isEmpty) return;
+    if (mounted) setState(() => _isDetectingUrgency = true);
+
+    String locationContext = "Location: ${location.address}. Coordinates: (${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)}).";
+    String prompt = 
+        "Analyze the following civic issue report to determine its urgency. Consider the description, the visual information from the image, and the location context. Respond with only one of these urgency levels: 'Low', 'Medium', or 'High'.\n\n"
+        "Description: \"$description\"\n"
+        "Location Context: \"$locationContext\"\n\n"
+        "Image is provided. Based on all this, the urgency level is:";
+
+    final payload = {
+      "contents": [
+        {
+          "parts": [
+            {"text": prompt},
+            {
+              "inlineData": {
+                "mimeType": "image/jpeg", // Assuming JPEG, adjust if PNG
+                "data": imageBase64
+              }
+            }
+          ]
+        }
+      ],
+      "generationConfig": {
+        "temperature": 0.3,
+        "maxOutputTokens": 10, // "Low", "Medium", or "High"
+        "stopSequences": ["\n"]
+      }
+    };
+    developer.log("Sending to Gemini for Urgency Detection. Prompt (text part): $prompt", name: "ReportDetailsScreen");
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$geminiApiKey'), // Using gemini-pro-vision for multimodal
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        developer.log("Gemini Urgency Detection Full Response: ${response.body}", name: "ReportDetailsScreen");
+        if (result['candidates'] != null &&
+            result['candidates'].isNotEmpty &&
+            result['candidates'][0]['content'] != null &&
+            result['candidates'][0]['content']['parts'] != null &&
+            result['candidates'][0]['content']['parts'].isNotEmpty) {
+          String detectedLevel = result['candidates'][0]['content']['parts'][0]['text'].trim();
+          // Validate if the response is one of the expected levels
+          if (['Low', 'Medium', 'High'].any((level) => level.toLowerCase() == detectedLevel.toLowerCase())) {
+            setState(() {
+              _detectedUrgency = detectedLevel;
+            });
+            developer.log("AI Detected Urgency: $_detectedUrgency", name: "ReportDetailsScreen");
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('AI Detected Urgency: $_detectedUrgency')));
+          } else {
+            developer.log("Gemini returned unexpected urgency level: $detectedLevel", name: "ReportDetailsScreen");
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI could not determine urgency reliably.')));
+             setState(() => _detectedUrgency = "Medium"); // Default or handle error
+          }
+        } else {
+          developer.log("Gemini Urgency Detection: Unexpected response structure.", name: "ReportDetailsScreen");
+           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI urgency detection format error.')));
+           setState(() => _detectedUrgency = "Medium"); // Default
+        }
+      } else {
+        developer.log("Gemini Urgency Detection API Error: ${response.statusCode} - ${response.body}", name: "ReportDetailsScreen");
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('AI Urgency Detection Error: ${response.statusCode}')));
+        setState(() => _detectedUrgency = "Medium"); // Default
+      }
+    } catch (e) {
+      developer.log("Error calling Gemini for urgency detection: $e", name: "ReportDetailsScreen");
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error in AI urgency detection: ${e.toString()}')));
+      setState(() => _detectedUrgency = "Medium"); // Default
+    } finally {
+      if (mounted) setState(() => _isDetectingUrgency = false);
+    }
+  }
+
 
   Future<void> _suggestCategoryGemini(String descriptionText) async {
     if (descriptionText.isEmpty) return;
@@ -552,6 +649,10 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a category.')));
       return;
     }
+     if (_detectedUrgency == null) { // Check if urgency has been detected
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Urgency level has not been determined yet.')));
+      return;
+    }
     if (_currentPosition == null) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location not available.')));
       return;
@@ -578,7 +679,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       final Map<String, dynamic> issueData = {
         'description': _descriptionController.text.trim(), 
         'category': _selectedCategoryModel!.name,
-        'urgency': _selectedUrgency,
+        'urgency': _detectedUrgency, // Use AI detected urgency
         'tags': tagsList.isNotEmpty ? tagsList : null,
         'imageUrl': imageUrl,
         'timestamp': FieldValue.serverTimestamp(),
@@ -639,7 +740,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final textTheme = Theme.of(context).textTheme;
     
-    bool isAnyProcessing = _isProcessingSTT || _isTranslatingText || _isSuggestingCategory;
+    bool isAnyProcessing = _isProcessingSTT || _isTranslatingText || _isSuggestingCategory || _isDetectingUrgency;
     bool showOriginalText = _originalTranscribedText != null && 
                            _originalTranscribedText!.isNotEmpty &&
                            _originalTranscribedText!.trim().toLowerCase() != _descriptionController.text.trim().toLowerCase();
@@ -773,6 +874,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                             const SizedBox(width: 8),
                             Text(
                               _isProcessingSTT ? "Transcribing..." : 
+                              _isDetectingUrgency ? "Detecting urgency..." :
                               _isTranslatingText ? "Processing to Indian English..." : 
                               _isSuggestingCategory ? "Suggesting category..." : "Processing...", 
                               style: const TextStyle(fontStyle: FontStyle.italic)
@@ -834,25 +936,26 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                     ),
                     SizedBox(height: screenHeight * 0.03),
                     
-                    Text("Urgency Level (Optional)", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    // --- Display AI Detected Urgency ---
+                    Text("AI Detected Urgency", style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                     SizedBox(height: screenHeight * 0.008),
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        hintText: 'Select Urgency',
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 15.0, horizontal: 16.0),
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: _isDetectingUrgency ? Colors.yellow[50] : (_detectedUrgency == null ? Colors.grey[100] : Colors.blue[50]),
+                        borderRadius: BorderRadius.circular(8.0),
+                        border: Border.all(color: _isDetectingUrgency ? Colors.orange.shade300 : (_detectedUrgency == null ? Colors.grey[350]! : Colors.blue.shade300) )
                       ),
-                      value: _selectedUrgency,
-                      isExpanded: true,
-                      items: _urgencyLevels.map((String level) {
-                        return DropdownMenuItem<String>(
-                          value: level,
-                          child: Text(level, style: textTheme.bodyLarge?.copyWith(fontSize: 15)),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedUrgency = newValue;
-                        });
-                      },
+                      child: Text(
+                        _isDetectingUrgency ? 'Analyzing urgency...' : (_detectedUrgency ?? 'Urgency not yet determined'),
+                        style: textTheme.bodyLarge?.copyWith(
+                          fontSize: 15, 
+                          color: _isDetectingUrgency ? Colors.orange.shade800 : (_detectedUrgency == null ? Colors.grey[700] : Colors.blue.shade800),
+                          fontStyle: _detectedUrgency == null && !_isDetectingUrgency ? FontStyle.italic : FontStyle.normal,
+                          fontWeight: _detectedUrgency != null ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
                     ),
                     SizedBox(height: screenHeight * 0.03),
 
