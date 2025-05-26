@@ -29,7 +29,7 @@ android {
 
     defaultConfig {
         applicationId = "com.modern_auth_app" // Ensure this matches
-        minSdk = 23 // Your current minSdk
+        minSdk = 24 // Your current minSdk
         targetSdk = flutter.targetSdkVersion // Uses Flutter-defined target SDK (e.g., 33 or 34)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
