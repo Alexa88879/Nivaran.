@@ -13,7 +13,7 @@ import 'dart:developer' as developer;
 import 'package:intl/intl.dart';
 import 'official_statistics_screen.dart';
 import '../../widgets/comments_dialog.dart';
-import '../notifications/notifications_screen.dart'; // <-- IMPORTED NotificationsScreen
+import '../notifications/notifications_screen.dart';
 
 class OfficialDashboardScreen extends StatefulWidget {
   const OfficialDashboardScreen({super.key});
@@ -32,29 +32,30 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   String? _selectedFilterCategory;
   String? _selectedFilterUrgency;
   String? _selectedFilterStatus;
-  
-  String _currentSortBy = 'timestamp'; 
-  bool _isSortDescending = true;      
+
+  String _currentSortBy = 'timestamp';
+  bool _isSortDescending = true;
 
   List<CategoryModel> _fetchedFilterCategories = [];
   final List<String> _allUrgencyLevels = ['Low', 'Medium', 'High'];
-  final List<String> _allStatuses = ['Reported', 'Acknowledged', 'In Progress', 'Addressed', 'Resolved', 'Rejected'];
-  
-  final FirestoreService _firestoreService = FirestoreService();
+  final List<String> _allStatuses = ['Reported', 'Acknowledged', 'In Progress', /*'Addressed',*/ 'Resolved', 'Rejected']; // Removed 'Addressed' as per schema
 
-  // --- Notification Badge State ---
+  final FirestoreService _firestoreService = FirestoreService();
   bool _hasUnreadNotifications = false;
   StreamSubscription? _notificationSubscription;
-  // --- End Notification Badge State ---
+
+  // State for managing "Show More" for original text in official dashboard list
+  final Map<String, bool> _expandedIssueOriginalText = {};
+  static const int shortDescriptionLengthThreshold = 70;
+
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _fetchFilterCategories();
-    // Initial setup of streams will be triggered by didChangeDependencies
   }
-  
+
   Future<void> _fetchFilterCategories() async {
     if (!mounted) return;
     try {
@@ -78,13 +79,13 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   void didChangeDependencies() {
     super.didChangeDependencies();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) { 
+      if (mounted) {
         if (!_hasCheckedUpdate) {
           UpdateChecker.checkForUpdate(context);
           _hasCheckedUpdate = true;
         }
-        _setupStream(); 
-        _setupNotificationListener(); // Setup notification listener
+        _setupStream();
+        _setupNotificationListener();
       }
     });
   }
@@ -92,7 +93,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _notificationSubscription?.cancel(); // Cancel notification subscription
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -103,7 +104,6 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
         UpdateChecker.checkForUpdate(context);
         _hasCheckedUpdate = true;
       }
-       // Optionally, refresh notification status on resume
       if (mounted) {
         _setupNotificationListener();
       }
@@ -118,18 +118,17 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     final officialUid = userProfileService.currentUserProfile?.uid;
 
     if (officialUid != null && officialUid.isNotEmpty) {
-      _notificationSubscription?.cancel(); // Cancel previous subscription if any
+      _notificationSubscription?.cancel();
       _notificationSubscription = FirebaseFirestore.instance
           .collection('notifications')
           .where('userId', isEqualTo: officialUid)
           .where('isRead', isEqualTo: false)
-          .limit(1) // We only need to know if there's at least one unread
+          .limit(1)
           .snapshots()
           .listen((snapshot) {
         if (mounted) {
           setState(() {
             _hasUnreadNotifications = snapshot.docs.isNotEmpty;
-            developer.log("Unread notifications status: $_hasUnreadNotifications for user $officialUid", name: "OfficialDashboard");
           });
         }
       }, onError: (error) {
@@ -141,7 +140,6 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
         }
       });
     } else {
-      // User not logged in or UID not available, ensure no badge is shown
       if (mounted && _hasUnreadNotifications) {
         setState(() {
           _hasUnreadNotifications = false;
@@ -151,14 +149,11 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     }
   }
 
-
   void _setupStream() {
-    if (!mounted) return; 
+    if (!mounted) return;
     final userProfileService = Provider.of<UserProfileService>(context, listen: false);
     final officialDepartment = userProfileService.currentUserProfile?.department;
     final currentUsername = userProfileService.currentUserProfile?.username;
-    final officialUid = userProfileService.currentUserProfile?.uid;
-
 
     if (userProfileService.currentUserProfile != null && userProfileService.currentUserProfile!.isOfficial) {
       if (officialDepartment != null && officialDepartment.isNotEmpty) {
@@ -170,10 +165,10 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
              });
            }
         }
-        
+
         Query query = FirebaseFirestore.instance
             .collection('issues')
-            .where('assignedDepartment', isEqualTo: officialDepartment); 
+            .where('assignedDepartment', isEqualTo: officialDepartment);
 
         if (_selectedFilterCategory != null) {
           query = query.where('category', isEqualTo: _selectedFilterCategory);
@@ -184,23 +179,26 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
         if (_selectedFilterStatus != null) {
           query = query.where('status', isEqualTo: _selectedFilterStatus);
         }
-        
+
         query = query.orderBy(_currentSortBy, descending: _isSortDescending);
         if (_currentSortBy != 'timestamp') {
-          query = query.orderBy('timestamp', descending: true); 
+          query = query.orderBy('timestamp', descending: true);
         }
-        
-        if(mounted){ 
-          // Only update the stream if it's null or the department has changed, to avoid unnecessary rebuilds
-          if (_departmentIssuesStream == null || officialDepartment != _departmentName || currentUsername != _username) { 
+
+        if(mounted){
+          if (_departmentIssuesStream == null || officialDepartment != _departmentName || currentUsername != _username) {
             setState(() {
+              _departmentIssuesStream = query.snapshots();
+            });
+          } else { // If filters or sort changed, also update the stream
+             setState(() {
               _departmentIssuesStream = query.snapshots();
             });
           }
         }
         developer.log("OfficialDashboard: Stream setup. Dept: $officialDepartment, Filters: Cat: $_selectedFilterCategory, Urg: $_selectedFilterUrgency, Stat: $_selectedFilterStatus. Sort: $_currentSortBy Desc: $_isSortDescending", name: "OfficialDashboard");
 
-      } else { 
+      } else {
          developer.log("OfficialDashboard: User is official but department is null or empty.", name: "OfficialDashboard");
          if(mounted){
            setState(() {
@@ -210,16 +208,14 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
            });
          }
       }
-       // Setup notification listener here as well, ensuring UID is available
       _setupNotificationListener();
-
     } else if (userProfileService.currentUserProfile == null && !userProfileService.isLoadingProfile && mounted) {
        developer.log("OfficialDashboard: User not official or profile not loaded. Clearing stream.", name: "OfficialDashboard");
        if(mounted) {
          setState(() {
            _departmentName = "Access Denied";
            _departmentIssuesStream = FirebaseFirestore.instance.collection('issues').where('assignedDepartment', isEqualTo: 'non_existent_value_to_get_empty_stream').snapshots();
-           _hasUnreadNotifications = false; // Ensure no badge if access denied
+           _hasUnreadNotifications = false;
          });
        }
         _notificationSubscription?.cancel();
@@ -232,8 +228,11 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
       if (newStatus == 'Resolved') {
         updateData['resolutionTimestamp'] = FieldValue.serverTimestamp();
       }
-      updateData['lastStatusUpdateBy'] = _username; 
+      updateData['lastStatusUpdateBy'] = _username;
       updateData['lastStatusUpdateAt'] = FieldValue.serverTimestamp();
+      // Update isUnresolved based on new status
+      updateData['isUnresolved'] = !(newStatus == 'Resolved' || newStatus == 'Rejected');
+
 
       await FirebaseFirestore.instance.collection('issues').doc(issueId).update(updateData);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Issue $issueId status updated to $newStatus.')));
@@ -265,7 +264,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return StatefulBuilder( 
+        return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
               title: const Text('Filter Issues'),
@@ -278,7 +277,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                       value: tempCategory,
                       items: [
                         const DropdownMenuItem<String>(value: null, child: Text('All Categories')),
-                        ..._fetchedFilterCategories.map((CategoryModel category) => DropdownMenuItem<String>(value: category.name, child: Text(category.name))) 
+                        ..._fetchedFilterCategories.map((CategoryModel category) => DropdownMenuItem<String>(value: category.name, child: Text(category.name)))
                       ],
                       onChanged: (String? newValue) => setDialogState(() => tempCategory = newValue),
                     ),
@@ -308,8 +307,9 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                         _selectedFilterCategory = null;
                         _selectedFilterUrgency = null;
                         _selectedFilterStatus = null;
+                         _expandedIssueOriginalText.clear(); // Clear expansion states on filter change
                       });
-                      _setupStream(); 
+                      _setupStream();
                     }
                     Navigator.of(context).pop();
                   },
@@ -322,6 +322,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                           _selectedFilterCategory = tempCategory;
                           _selectedFilterUrgency = tempUrgency;
                           _selectedFilterStatus = tempStatus;
+                          _expandedIssueOriginalText.clear(); // Clear expansion states on filter change
                         });
                         _setupStream();
                      }
@@ -353,18 +354,19 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
   }
 
   void _applySort(String sortByField) {
-    Navigator.pop(context); 
+    Navigator.pop(context);
     if (mounted) {
       setState(() {
         if (_currentSortBy == sortByField) {
-          _isSortDescending = !_isSortDescending; 
+          _isSortDescending = !_isSortDescending;
         } else {
           _currentSortBy = sortByField;
-          _isSortDescending = true; 
-          if (sortByField == 'urgency') _isSortDescending = false; 
+          _isSortDescending = true;
+          if (sortByField == 'urgency') _isSortDescending = false;
         }
+         _expandedIssueOriginalText.clear(); // Clear expansion states on sort change
       });
-      _setupStream(); 
+      _setupStream();
     }
   }
 
@@ -372,7 +374,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     switch (_selectedIndex) {
       case 0: return _buildIssuesList();
       case 1: return const OfficialStatisticsScreen();
-      case 2: return const NotificationsScreen(); // <-- Show NotificationsScreen
+      case 2: return const NotificationsScreen();
       case 3: return _buildProfileScreen();
       default: return _buildIssuesList();
     }
@@ -386,20 +388,20 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     final String displayName = profile.username ?? profile.fullName ?? profile.email?.split('@')[0] ?? 'Official';
     final String? profileImageUrl = profile.profilePhotoUrl;
 
-    return ListView( 
-        padding: const EdgeInsets.all(0), 
+    return ListView(
+        padding: const EdgeInsets.all(0),
         children: [
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 30.0, horizontal: 20.0),
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.05), 
+              color: Theme.of(context).primaryColor.withOpacity(0.05),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 CircleAvatar(
-                  radius: 55, 
+                  radius: 55,
                   backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
                   backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
                       ? NetworkImage(profileImageUrl)
@@ -445,38 +447,18 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
             ),
           ),
           const SizedBox(height: 20),
-          _buildProfileOptionTile(
-            context,
-            icon: Icons.edit_outlined,
-            title: 'Edit Profile',
-            onTap: () {
+          _buildProfileOptionTile(context, icon: Icons.edit_outlined, title: 'Edit Profile', onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Edit Profile - Coming Soon!")));
-            },
-          ),
-          _buildProfileOptionTile(
-            context,
-            icon: Icons.lock_outline_rounded,
-            title: 'Change Password',
-            onTap: () {
+          }),
+          _buildProfileOptionTile(context, icon: Icons.lock_outline_rounded, title: 'Change Password', onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Change Password - Coming Soon!")));
-            },
-          ),
-          _buildProfileOptionTile(
-            context,
-            icon: Icons.history_edu_outlined,
-            title: 'My Activity Log',
-            onTap: () {
+          }),
+          _buildProfileOptionTile(context, icon: Icons.history_edu_outlined, title: 'My Activity Log', onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("My Activity - Coming Soon!")));
-            },
-          ),
-           _buildProfileOptionTile(
-            context,
-            icon: Icons.notifications_none_outlined,
-            title: 'Notification Settings',
-            onTap: () {
+          }),
+           _buildProfileOptionTile(context, icon: Icons.notifications_none_outlined, title: 'Notification Settings', onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Notification Settings - Coming Soon!")));
-            },
-          ),
+          }),
           const Divider(height: 30, indent: 20, endIndent: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
@@ -512,7 +494,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
 
 
   Widget _buildIssuesList() {
-    final userProfileService = Provider.of<UserProfileService>(context, listen: false); 
+    final userProfileService = Provider.of<UserProfileService>(context, listen: false);
     if (_departmentName == "Loading..." || (userProfileService.isLoadingProfile && _departmentIssuesStream == null)) {
       return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Loading dashboard...", style: TextStyle(fontSize: 16))]));
     }
@@ -552,13 +534,22 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
             final issueId = issuesDocs[index].id;
             final issue = Issue.fromFirestore(issueData, issueId);
 
+            // Initialize expansion state for new issues
+            _expandedIssueOriginalText.putIfAbsent(issue.id, () => issue.description.length <= shortDescriptionLengthThreshold);
+            bool showOriginal = issue.originalSpokenText != null &&
+                                issue.originalSpokenText!.isNotEmpty &&
+                                issue.userInputLanguage != null &&
+                                !issue.userInputLanguage!.toLowerCase().startsWith('en');
+            bool isDescriptionLongForThisIssue = issue.description.length > shortDescriptionLengthThreshold;
+
+
             return Card(
               margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              elevation: 2.5, 
+              elevation: 2.5,
               shadowColor: Colors.grey.withAlpha(100),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), 
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Padding(
-                padding: const EdgeInsets.all(16.0), 
+                padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -570,20 +561,20 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Reported by: ${issue.username}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
+                              Text("Reported by: ${issue.username}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                               const SizedBox(height: 2),
-                              Text("On: ${_formatTimestamp(issue.timestamp)}", style: TextStyle(color: Colors.grey[700], fontSize: 12.5)), 
+                              Text("On: ${_formatTimestamp(issue.timestamp)}", style: TextStyle(color: Colors.grey[700], fontSize: 12.5)),
                             ],
                           ),
                         ),
                         PopupMenuButton<String>(
-                          icon: Icon(Icons.more_vert, color: Colors.grey[800]), 
+                          icon: Icon(Icons.more_vert, color: Colors.grey[800]),
                           tooltip: "Update Status",
                           onSelected: (String newStatus) => _updateIssueStatus(issue.id, newStatus),
                           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                             _buildPopupMenuItem('Acknowledged', issue.status),
                             _buildPopupMenuItem('In Progress', issue.status),
-                            _buildPopupMenuItem('Addressed', issue.status), 
+                            // _buildPopupMenuItem('Addressed', issue.status), // Removed as per schema
                             _buildPopupMenuItem('Resolved', issue.status),
                             _buildPopupMenuItem('Rejected', issue.status),
                           ],
@@ -592,6 +583,55 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                     ),
                     const SizedBox(height: 10),
                     Text(issue.description, style: const TextStyle(fontSize: 15, height: 1.4, color: Colors.black87), maxLines: 3, overflow: TextOverflow.ellipsis),
+                    // Display Original Spoken Text
+                    if (showOriginal)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Original Report (in ${issue.userInputLanguage!.split('-')[0]}):",
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.blueGrey[700],
+                                fontWeight: FontWeight.w500,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              (_expandedIssueOriginalText[issue.id]! || !isDescriptionLongForThisIssue)
+                                  ? issue.originalSpokenText!
+                                  : issue.originalSpokenText!.split('\n').first,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontStyle: FontStyle.italic,
+                                fontSize: 13.0,
+                                color: Colors.black.withAlpha(200),
+                              ),
+                              maxLines: (_expandedIssueOriginalText[issue.id]! || !isDescriptionLongForThisIssue) ? null : 1,
+                              overflow: (_expandedIssueOriginalText[issue.id]! || !isDescriptionLongForThisIssue) ? TextOverflow.visible : TextOverflow.ellipsis,
+                            ),
+                            if (isDescriptionLongForThisIssue && (issue.originalSpokenText!.contains('\n') || issue.originalSpokenText!.length > 70))
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(50, 20),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  alignment: Alignment.centerLeft,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _expandedIssueOriginalText[issue.id] = !_expandedIssueOriginalText[issue.id]!;
+                                  });
+                                },
+                                child: Text(
+                                  _expandedIssueOriginalText[issue.id]! ? "Show less" : "Show more",
+                                  style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 12.0),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8.0,
@@ -600,7 +640,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                         Chip(
                           avatar: Icon(Icons.category_outlined, size: 16, color: Theme.of(context).colorScheme.primary),
                           label: Text(issue.category, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w500)),
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer.withAlpha(100), 
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer.withAlpha(100),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
@@ -608,14 +648,14 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                           Chip(
                             avatar: Icon(Icons.priority_high_rounded, size: 16, color: _getUrgencyColor(issue.urgency)),
                             label: Text(issue.urgency!, style: TextStyle(fontSize: 12, color: _getUrgencyColor(issue.urgency), fontWeight: FontWeight.w500)),
-                            backgroundColor: _getUrgencyColor(issue.urgency).withAlpha(40), 
+                            backgroundColor: _getUrgencyColor(issue.urgency).withAlpha(40),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         if (issue.tags != null && issue.tags!.isNotEmpty)
                           ...issue.tags!.map((tag) => Chip(
                                 label: Text("#$tag", style: TextStyle(fontSize: 11, color: Colors.blueGrey[800])),
-                                backgroundColor: Colors.blueGrey[100], 
+                                backgroundColor: Colors.blueGrey[100],
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               )),
@@ -633,10 +673,10 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                       Padding(
                         padding: const EdgeInsets.only(top: 12.0, bottom: 8.0),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10), 
+                          borderRadius: BorderRadius.circular(10),
                           child: Image.network(
                             issue.imageUrl,
-                            height: 190, 
+                            height: 190,
                             width: double.infinity,
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) => Container(height: 190, color: Colors.grey[200], child: Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey[400], size: 40))),
@@ -644,36 +684,15 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                           ),
                         ),
                       ),
-                    Divider(height: 24, thickness: 0.8, color: Colors.grey[350]), 
+                    Divider(height: 24, thickness: 0.8, color: Colors.grey[350]),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround, 
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildActionChip(
-                          icon: Icons.thumb_up_alt_outlined,
-                          label: "${issue.upvotes} Upvotes",
-                          color: Colors.green.shade600,
-                          onTap: null, 
-                        ),
-                        _buildActionChip(
-                          icon: Icons.thumb_down_alt_outlined,
-                          label: "${issue.downvotes} Downvotes",
-                          color: Colors.red.shade600,
-                          onTap: null, 
-                        ),
-                        _buildActionChip(
-                          icon: Icons.chat_bubble_outline_rounded,
-                          label: "${issue.commentsCount} Comments",
-                          color: Colors.blueAccent.shade700,
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (_) => CommentsDialog(
-                                issueId: issue.id,
-                                issueDescription: issue.description,
-                              ),
-                            );
-                          },
-                        ),
+                        _buildActionChip(icon: Icons.thumb_up_alt_outlined, label: "${issue.upvotes} Upvotes", color: Colors.green.shade600, onTap: null),
+                        _buildActionChip(icon: Icons.thumb_down_alt_outlined, label: "${issue.downvotes} Downvotes", color: Colors.red.shade600, onTap: null),
+                        _buildActionChip(icon: Icons.chat_bubble_outline_rounded, label: "${issue.commentsCount} Comments", color: Colors.blueAccent.shade700, onTap: () {
+                            showDialog(context: context, builder: (_) => CommentsDialog(issueId: issue.id, issueDescription: issue.description));
+                        }),
                       ],
                     ),
                   ],
@@ -690,63 +709,47 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
     return PopupMenuItem<String>(value: value, enabled: value != currentStatus, child: Text(value, style: TextStyle(color: value == currentStatus ? Colors.grey : null)));
   }
 
-  Widget _buildActionChip({
-    required IconData icon,
-    required String label,
-    required Color color,
-    VoidCallback? onTap, 
-  }) {
+  Widget _buildActionChip({ required IconData icon, required String label, required Color color, VoidCallback? onTap }) {
     return InkWell(
-      onTap: onTap, 
+      onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 7.0), 
+        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 7.0),
         decoration: BoxDecoration(
-          color: onTap != null ? color.withAlpha(30) : Colors.transparent, 
-          border: Border.all(
-            color: onTap != null ? color.withAlpha(150) : color.withAlpha(100), 
-            width: 1.2,
-          ),
+          color: onTap != null ? color.withAlpha(30) : Colors.transparent,
+          border: Border.all(color: onTap != null ? color.withAlpha(150) : color.withAlpha(100), width: 1.2),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: color), 
+            Icon(icon, size: 18, color: color),
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5, 
-                color: color,
-                fontWeight: FontWeight.w600, 
-              ),
-            ),
+            Text(label, style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final userProfileService = Provider.of<UserProfileService>(context);
     final authService = Provider.of<AuthService>(context, listen: false);
-    
+
     if (userProfileService.isLoadingProfile && userProfileService.currentUserProfile == null) {
       return Scaffold(appBar: AppBar(title: const Text("Loading Dashboard...")), body: const Center(child: CircularProgressIndicator()));
     }
 
     if (!(userProfileService.currentUserProfile?.isOfficial ?? false)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) { 
+        if (mounted) {
           Navigator.of(context).pushNamedAndRemoveUntil('/role_selection', (route) => false);
         }
       });
       return Scaffold(appBar: AppBar(title: const Text('Access Denied')), body: const Center(child: Text('Redirecting...', style: TextStyle(fontSize: 16))));
     }
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -756,16 +759,8 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list_alt),
-            tooltip: 'Filter Issues',
-            onPressed: _showFilterDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.sort_by_alpha_rounded), 
-            tooltip: 'Sort Issues',
-            onPressed: _showSortOptions,
-          ),
+          IconButton(icon: const Icon(Icons.filter_list_alt), tooltip: 'Filter Issues', onPressed: _showFilterDialog),
+          IconButton(icon: const Icon(Icons.sort_by_alpha_rounded), tooltip: 'Sort Issues', onPressed: _showSortOptions),
           IconButton(icon: const Icon(Icons.logout_outlined), tooltip: 'Logout', onPressed: () async {
              await authService.signOut(context);
           }),
@@ -775,7 +770,7 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
-          if (mounted) { 
+          if (mounted) {
              setState(() => _selectedIndex = index);
           }
         },
@@ -783,16 +778,10 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
         selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey[600],
         items: [
+          BottomNavigationBarItem(icon: Icon(_selectedIndex == 0 ? Icons.list_alt_rounded : Icons.list_alt_outlined), label: 'Issues'),
+          BottomNavigationBarItem(icon: Icon(_selectedIndex == 1 ? Icons.bar_chart_rounded : Icons.bar_chart_outlined), label: 'Stats'),
           BottomNavigationBarItem(
-            icon: Icon(_selectedIndex == 0 ? Icons.list_alt_rounded : Icons.list_alt_outlined), 
-            label: 'Issues'
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(_selectedIndex == 1 ? Icons.bar_chart_rounded : Icons.bar_chart_outlined), 
-            label: 'Stats'
-          ),
-          BottomNavigationBarItem(
-            icon: Stack( // Wrap with Stack for badge
+            icon: Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
                 Icon(_selectedIndex == 2 ? Icons.notifications_active : Icons.notifications_active_outlined),
@@ -803,20 +792,14 @@ class _OfficialDashboardScreenState extends State<OfficialDashboardScreen> with 
                     child: Container(
                       width: 9,
                       height: 9,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
                     ),
                   ),
               ],
             ),
             label: 'Alerts',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(_selectedIndex == 3 ? Icons.account_circle : Icons.account_circle_outlined), 
-            label: 'Profile'
-          ),
+          BottomNavigationBarItem(icon: Icon(_selectedIndex == 3 ? Icons.account_circle : Icons.account_circle_outlined), label: 'Profile'),
         ],
       ),
     );

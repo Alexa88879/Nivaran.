@@ -28,18 +28,25 @@ class _IssueCardState extends State<IssueCard> {
   int _optimisticDownvotes = 0;
   String? _riskPredictionText;
   bool _isFetchingRisk = false;
+  bool _showFullOriginalText = false; // State for toggling original text
+
+  // Define a threshold for "short" description (e.g., characters or lines)
+  static const int shortDescriptionLengthThreshold = 70; // Characters
+  // static const int shortDescriptionLineThreshold = 2; // Lines
 
   @override
   void initState() {
     super.initState();
     _updateOptimisticStateFromWidget();
+    // Determine initial state of _showFullOriginalText based on main description length
+    _showFullOriginalText = widget.issue.description.length <= shortDescriptionLengthThreshold;
   }
 
   void _updateOptimisticStateFromWidget() {
     _optimisticUpvotes = widget.issue.upvotes;
     _optimisticDownvotes = widget.issue.downvotes;
-    if (_currentUser != null && widget.issue.voters.containsKey(_currentUser.uid)) {
-      _optimisticVote = widget.issue.voters[_currentUser.uid];
+    if (_currentUser != null && widget.issue.voters.containsKey(_currentUser!.uid)) {
+      _optimisticVote = widget.issue.voters[_currentUser!.uid];
     } else {
       _optimisticVote = null;
     }
@@ -54,11 +61,15 @@ class _IssueCardState extends State<IssueCard> {
         !_mapEquals(widget.issue.voters, oldWidget.issue.voters) ||
         widget.issue.status != oldWidget.issue.status ||
         widget.issue.urgency != oldWidget.issue.urgency ||
-        !_listEquals(widget.issue.tags, oldWidget.issue.tags)) {
-      setStateIfMounted(() { // Use helper
+        !_listEquals(widget.issue.tags, oldWidget.issue.tags) ||
+        widget.issue.description != oldWidget.issue.description || // Check description change
+        widget.issue.originalSpokenText != oldWidget.issue.originalSpokenText ) {
+      setStateIfMounted(() {
         _updateOptimisticStateFromWidget();
         _riskPredictionText = null;
         _isFetchingRisk = false;
+        // Reset _showFullOriginalText based on the new issue's description length
+        _showFullOriginalText = widget.issue.description.length <= shortDescriptionLengthThreshold;
       });
     }
   }
@@ -70,31 +81,19 @@ class _IssueCardState extends State<IssueCard> {
   }
 
   bool _mapEquals<T, U>(Map<T, U> a, Map<T, U> b) {
-    if (a.length != b.length) {
-      return false;
-    }
+    if (a.length != b.length) return false;
     for (final key in a.keys) {
-      if (!b.containsKey(key) || a[key] != b[key]) {
-        return false;
-      }
+      if (!b.containsKey(key) || a[key] != b[key]) return false;
     }
     return true;
   }
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
-    if (a == null && b == null) {
-      return true;
-    }
-    if (a == null || b == null) {
-      return false;
-    }
-    if (a.length != b.length) {
-      return false;
-    }
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) {
-        return false;
-      }
+      if (a[i] != b[i]) return false;
     }
     return true;
   }
@@ -103,64 +102,38 @@ class _IssueCardState extends State<IssueCard> {
     final dateTime = timestamp.toDate();
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    if (difference.inMinutes < 1) {
-      return 'just now';
-    }
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m';
-    }
-    if (difference.inHours < 24) {
-      return '${difference.inHours}h';
-    }
-    if (difference.inDays < 7) {
-      return '${difference.inDays}d';
-    }
+    if (difference.inMinutes < 1) return 'just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes}m';
+    if (difference.inHours < 24) return '${difference.inHours}h';
+    if (difference.inDays < 7) return '${difference.inDays}d';
     return DateFormat('dd MMM').format(dateTime);
   }
 
   Color _getStatusPillBackgroundColor(String status) {
     switch (status.toLowerCase()) {
-      case 'resolved':
-        return Colors.green.shade50;
-      case 'in progress': 
-      case 'acknowledged': 
-        return Colors.orange.shade50;
-      case 'rejected':
-        return Colors.red.shade100; 
-      case 'reported':
-      default:
-        return Colors.blue.shade50; 
+      case 'resolved': return Colors.green.shade50;
+      case 'in progress': case 'acknowledged': return Colors.orange.shade50;
+      case 'rejected': return Colors.red.shade100;
+      case 'reported': default: return Colors.blue.shade50;
     }
   }
 
   Color _getStatusPillTextColor(String status) {
     switch (status.toLowerCase()) {
-      case 'resolved':
-        return Colors.green.shade700;
-      case 'in progress':
-      case 'acknowledged':
-        return Colors.orange.shade700;
-      case 'rejected':
-        return Colors.red.shade700;
-      case 'reported':
-      default:
-        return Colors.blue.shade700; 
+      case 'resolved': return Colors.green.shade700;
+      case 'in progress': case 'acknowledged': return Colors.orange.shade700;
+      case 'rejected': return Colors.red.shade700;
+      case 'reported': default: return Colors.blue.shade700;
     }
   }
 
   IconData _getStatusPillIcon(String status) {
     switch (status.toLowerCase()) {
-      case 'resolved':
-        return Icons.check_circle_outline_rounded;
-      case 'in progress':
-        return Icons.hourglass_top_rounded; 
-      case 'acknowledged':
-        return Icons.visibility_outlined; 
-      case 'rejected':
-        return Icons.cancel_outlined;
-      case 'reported':
-      default:
-        return Icons.report_problem_outlined; 
+      case 'resolved': return Icons.check_circle_outline_rounded;
+      case 'in progress': return Icons.hourglass_top_rounded;
+      case 'acknowledged': return Icons.visibility_outlined;
+      case 'rejected': return Icons.cancel_outlined;
+      case 'reported': default: return Icons.report_problem_outlined;
     }
   }
 
@@ -175,37 +148,31 @@ class _IssueCardState extends State<IssueCard> {
 
   Future<void> _handleVote(VoteType voteType) async {
     if (_currentUser == null) {
-      // This check is before any await, so context should be fine.
-      // However, good practice to check mounted if any doubt.
-      if (mounted) { 
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You need to be logged in to vote.')));
       }
       return;
     }
 
-    final String userId = _currentUser.uid;
-    // Store current state for potential rollback
+    final String userId = _currentUser!.uid;
     final VoteType? previousOptimisticVote = _optimisticVote;
     final int previousOptimisticUpvotes = _optimisticUpvotes;
     final int previousOptimisticDownvotes = _optimisticDownvotes;
 
-    // Optimistically update UI
     VoteType? newLocalVoteState;
     int newOptimisticUpvotes = _optimisticUpvotes;
     int newOptimisticDownvotes = _optimisticDownvotes;
 
-    if (_optimisticVote == voteType) { // Clicking the same vote type (un-voting)
+    if (_optimisticVote == voteType) {
       newLocalVoteState = null;
-      if (voteType == VoteType.upvote) {newOptimisticUpvotes--;} 
-      else {newOptimisticDownvotes--;}
-    } else { // New vote or changing vote
+      if (voteType == VoteType.upvote) newOptimisticUpvotes--;
+      else newOptimisticDownvotes--;
+    } else {
       newLocalVoteState = voteType;
-      // Decrement previous vote if exists
-      if (_optimisticVote == VoteType.upvote) {newOptimisticUpvotes--;}
-      if (_optimisticVote == VoteType.downvote) {newOptimisticDownvotes--;}
-      // Increment new vote
-      if (voteType == VoteType.upvote) {newOptimisticUpvotes++;} 
-      else {newOptimisticDownvotes++;}
+      if (_optimisticVote == VoteType.upvote) newOptimisticUpvotes--;
+      if (_optimisticVote == VoteType.downvote) newOptimisticDownvotes--;
+      if (voteType == VoteType.upvote) newOptimisticUpvotes++;
+      else newOptimisticDownvotes++;
     }
 
     setStateIfMounted(() {
@@ -216,20 +183,15 @@ class _IssueCardState extends State<IssueCard> {
 
     try {
       await _firestoreService.voteIssue(widget.issue.id, userId, voteType);
-      // If successful, optimistic UI is already correct.
     } catch (e) {
       developer.log("Error voting: $e", name: "IssueCard");
-      // Rollback optimistic UI update if Firestore write fails
-      // Check if the widget is still in the tree before calling setState or ScaffoldMessenger
-      if (mounted) { 
-        setState(() { // No need for setStateIfMounted here as it's already inside if(mounted)
+      if (mounted) {
+        setState(() {
           _optimisticVote = previousOptimisticVote;
           _optimisticUpvotes = previousOptimisticUpvotes;
           _optimisticDownvotes = previousOptimisticDownvotes;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to register vote: ${e.toString()}')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to register vote: ${e.toString()}')));
       }
     }
   }
@@ -242,17 +204,16 @@ class _IssueCardState extends State<IssueCard> {
       return;
     }
     setStateIfMounted(() => _isFetchingRisk = true);
-    
+
     try {
       final http.Response imageResponse = await http.get(Uri.parse(imageUrl));
-      if (!mounted) return; // Check after await
+      if (!mounted) return;
 
       if (imageResponse.statusCode == 200) {
         final Uint8List imageBytes = imageResponse.bodyBytes;
         final String? prediction = await RiskPredictionService.getRiskPredictionFromImage(imageBytes);
-        if (!mounted) return; // Check after await
+        if (!mounted) return;
         setState(() => _riskPredictionText = prediction ?? "No specific risks identified or unable to analyze.");
-        
       } else {
         setStateIfMounted(() => _riskPredictionText = "Failed to load image (Error: ${imageResponse.statusCode}).");
       }
@@ -306,6 +267,70 @@ class _IssueCardState extends State<IssueCard> {
     );
   }
 
+  Widget _buildOriginalTextSection() {
+    final issue = widget.issue;
+    final theme = Theme.of(context);
+    bool shouldDisplayOriginal = issue.originalSpokenText != null &&
+                                 issue.originalSpokenText!.isNotEmpty &&
+                                 issue.userInputLanguage != null &&
+                                 !issue.userInputLanguage!.toLowerCase().startsWith('en');
+
+    if (!shouldDisplayOriginal) {
+      return const SizedBox.shrink();
+    }
+
+    bool isDescriptionLong = issue.description.length > shortDescriptionLengthThreshold;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Original Report (in ${issue.userInputLanguage!.split('-')[0]}):", // Displaying base language
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: Colors.blueGrey[700],
+              fontWeight: FontWeight.w500,
+              fontSize: 11.5,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            _showFullOriginalText || !isDescriptionLong
+                ? issue.originalSpokenText!
+                : issue.originalSpokenText!.split('\n').first, // Show first line or full if short desc
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontStyle: FontStyle.italic,
+              fontSize: 13.0,
+              color: Colors.black.withAlpha(200),
+            ),
+            maxLines: _showFullOriginalText || !isDescriptionLong ? null : 1,
+            overflow: _showFullOriginalText || !isDescriptionLong ? TextOverflow.visible : TextOverflow.ellipsis,
+          ),
+          if (isDescriptionLong && issue.originalSpokenText!.contains('\n') || issue.originalSpokenText!.length > 70 ) // only show toggle if original text might be truncated
+            TextButton(
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(50, 20),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                alignment: Alignment.centerLeft,
+              ),
+              onPressed: () {
+                setStateIfMounted(() {
+                  _showFullOriginalText = !_showFullOriginalText;
+                });
+              },
+              child: Text(
+                _showFullOriginalText ? "Show less" : "Show more",
+                style: TextStyle(color: theme.primaryColor, fontSize: 12.0),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -355,9 +380,10 @@ class _IssueCardState extends State<IssueCard> {
             SizedBox(height: widget.issue.description.isNotEmpty ? 8 : 4),
             if (widget.issue.description.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 4.0),
+                padding: const EdgeInsets.only(bottom: 0), // Reduced bottom padding
                 child: Text(widget.issue.description, style: textTheme.bodyMedium?.copyWith(fontSize: 14.0, color: Colors.black.withAlpha((0.8 * 255).round())), maxLines: 3, overflow: TextOverflow.ellipsis),
               ),
+            _buildOriginalTextSection(), // Display original text section
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4.0),
               child: Wrap(
