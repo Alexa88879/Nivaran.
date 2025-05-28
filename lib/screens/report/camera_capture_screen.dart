@@ -22,7 +22,12 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
 
   // To ensure dispose is only called once or handled correctly
   bool _isDisposing = false;
-
+  
+  // Add these new variables for retry mechanism
+  int _initRetryCount = 0;
+  static const int _maxInitRetries = 3;
+  static const Duration _initTimeout = Duration(seconds: 10);
+  bool _isInitializing = false;
 
   FlashMode _currentFlashMode = FlashMode.off;
   final List<FlashMode> _availableFlashModes = [
@@ -46,55 +51,90 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
         if (_cameraController!.value.isStreamingImages) {
           await _cameraController!.stopImageStream();
         }
-        // Check if recording video, though not used here, good practice for generic dispose
-        // if (_cameraController!.value.isRecordingVideo) {
-        //   await _cameraController!.stopVideoRecording();
-        // }
         await _cameraController!.dispose();
         developer.log('CameraCaptureScreen: Controller disposed.', name: 'CameraCaptureScreen');
       } catch (e, s) {
-        developer.log('CameraCaptureScreen: Error disposing controller in _disposeController: $e', name: 'CameraCaptureScreen', error: e, stackTrace: s);
+        developer.log('CameraCaptureScreen: Error disposing controller: $e', 
+                     name: 'CameraCaptureScreen', error: e, stackTrace: s);
       } finally {
         if (mounted) {
           setState(() {
             _cameraController = null;
           });
         } else {
-           _cameraController = null;
+          _cameraController = null;
         }
       }
     }
   }
 
 
+  // Add this flag to track permission requests
+  // Add this flag at the top of your _CameraCaptureScreenState class
+  bool _isRequestingPermission = false;
+  
+  // Update your permission request method
   Future<void> _requestPermissionAndInitializeCamera() async {
-    developer.log('CameraCaptureScreen: Requesting camera permission...', name: 'CameraCaptureScreen');
-    if (!mounted) return; // Ensure widget is still mounted
-    final cameraStatus = await Permission.camera.request();
+    // Prevent multiple simultaneous permission requests
+    if (_isRequestingPermission) {
+      developer.log('CameraCaptureScreen: Permission request already in progress.', name: 'CameraCaptureScreen');
+      return;
+    }
     
-    if (!mounted) return;
+    try {
+      _isRequestingPermission = true;
+      developer.log('CameraCaptureScreen: Requesting camera permission...', name: 'CameraCaptureScreen');
+      if (!mounted) return; // Ensure widget is still mounted
+      
+      // First check if permission is already granted
+      final cameraStatus = await Permission.camera.status;
+      if (cameraStatus.isGranted) {
+        developer.log('CameraCaptureScreen: Camera permission already granted.', name: 'CameraCaptureScreen');
+        if (mounted) {
+          setState(() {
+            _isPermissionGranted = true;
+            _initializationError = "";
+          });
+          await _initializeCamera();
+        }
+        return;
+      }
+      
+      // Request permission if not already granted
+      final requestStatus = await Permission.camera.request();
+      
+      if (!mounted) return;
 
-    if (cameraStatus.isGranted) {
-      developer.log('CameraCaptureScreen: Camera permission granted.', name: 'CameraCaptureScreen');
-      setState(() {
-        _isPermissionGranted = true;
-        _initializationError = "";
-      });
-      await _initializeCamera();
-    } else {
-      developer.log('CameraCaptureScreen: Camera permission denied.', name: 'CameraCaptureScreen');
-      setState(() {
-        _isPermissionGranted = false;
-        _isCameraInitialized = false;
-        _initializationError = 'Camera permission denied. Please grant permission in settings.';
-      });
-      if (cameraStatus.isPermanentlyDenied && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Camera permission is permanently denied. Please enable it in app settings.'),
-            action: SnackBarAction(label: 'Open Settings', onPressed: openAppSettings),
-          ),
-        );
+      if (requestStatus.isGranted) {
+        developer.log('CameraCaptureScreen: Camera permission granted.', name: 'CameraCaptureScreen');
+        setState(() {
+          _isPermissionGranted = true;
+          _initializationError = "";
+        });
+        await _initializeCamera();
+      } else {
+        developer.log('CameraCaptureScreen: Camera permission denied.', name: 'CameraCaptureScreen');
+        setState(() {
+          _isPermissionGranted = false;
+          _isCameraInitialized = false;
+          _initializationError = 'Camera permission denied. Please grant permission in settings.';
+        });
+        if (requestStatus.isPermanentlyDenied && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Camera permission is permanently denied. Please enable it in app settings.'),
+              action: SnackBarAction(label: 'Open Settings', onPressed: openAppSettings),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRequestingPermission = false;
+        });
+      } else {
+        _isRequestingPermission = false;
       }
     }
   }
@@ -111,11 +151,21 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
       }
       return;
     }
-     if (_isDisposing) {
+    if (_isDisposing) {
       developer.log('CameraCaptureScreen: Attempted to initialize camera while disposing.', name: 'CameraCaptureScreen');
       return;
     }
-
+    
+    // Prevent multiple simultaneous initialization attempts
+    if (_isInitializing) {
+      developer.log('CameraCaptureScreen: Camera initialization already in progress.', name: 'CameraCaptureScreen');
+      return;
+    }
+    
+    setState(() {
+      _isInitializing = true;
+      _initializationError = "";
+    });
 
     try {
       developer.log('CameraCaptureScreen: Fetching available cameras...', name: 'CameraCaptureScreen');
@@ -135,6 +185,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
             setState(() {
               _isCameraInitialized = false;
               _initializationError = 'No cameras available on this device.';
+              _isInitializing = false;
             });
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('No cameras found on this device.')),
@@ -147,6 +198,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
         setState(() {
           _isCameraInitialized = false;
           _initializationError = 'Error finding cameras: ${e.toString()}';
+          _isInitializing = false;
         });
       }
     }
@@ -176,7 +228,20 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
 
     try {
       developer.log('CameraCaptureScreen: Initializing new camera controller...', name: 'CameraCaptureScreen');
-      await _cameraController!.initialize();
+      
+      // Add timeout to camera initialization
+      bool initSuccess = false;
+      await Future.any([
+        _cameraController!.initialize().then((_) {
+          initSuccess = true;
+        }),
+        Future.delayed(_initTimeout).then((_) {
+          if (!initSuccess) {
+            throw CameraException('timeout', 'Camera initialization timed out after ${_initTimeout.inSeconds} seconds');
+          }
+        })
+      ]);
+      
       developer.log('CameraCaptureScreen: Camera controller initialized successfully. Aspect Ratio: ${_cameraController!.value.aspectRatio}', name: 'CameraCaptureScreen');
       if(mounted && _cameraController != null) { 
         await _cameraController!.setFlashMode(_currentFlashMode);
@@ -185,23 +250,46 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
         setState(() {
           _isCameraInitialized = true;
           _initializationError = "";
+          _isInitializing = false;
+          _initRetryCount = 0; // Reset retry count on success
         });
       }
     } on CameraException catch (e,s) {
       developer.log('CameraCaptureScreen: CameraException during _onNewCameraSelected: ${e.code} - ${e.description}', name: 'CameraCaptureScreen', error: e, stackTrace: s);
       _showCameraException(e); // This already checks mounted
+      
+      // Handle "busy" errors with retry mechanism
       if (mounted) {
         setState(() {
           _isCameraInitialized = false;
           _initializationError = 'Failed to initialize camera: ${e.description}';
+          _isInitializing = false;
         });
+        
+        // Implement retry for camera busy errors
+        if ((e.code == 'CameraAccessDenied' || 
+             e.code == 'camera_error' || 
+             e.description?.contains('busy') == true) && 
+            _initRetryCount < _maxInitRetries) {
+          _initRetryCount++;
+          developer.log('CameraCaptureScreen: Retrying camera initialization (attempt $_initRetryCount of $_maxInitRetries)', 
+                       name: 'CameraCaptureScreen');
+          
+          // Add delay before retry
+          Future.delayed(Duration(milliseconds: 800 * _initRetryCount), () {
+            if (mounted && !_isDisposing) {
+              _onNewCameraSelected(cameraDescription);
+            }
+          });
+        }
       }
     } catch (e,s) {
       developer.log('CameraCaptureScreen: Generic error during _onNewCameraSelected: $e', name: 'CameraCaptureScreen', error: e, stackTrace:s);
-       if (mounted) {
+      if (mounted) {
         setState(() {
           _isCameraInitialized = false;
           _initializationError = 'An unexpected error occurred: ${e.toString()}';
+          _isInitializing = false;
         });
       }
     }
@@ -216,25 +304,29 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
 
     if (state == AppLifecycleState.inactive) {
       developer.log('CameraCaptureScreen: App inactive.', name: 'CameraCaptureScreen');
-      // Don't dispose here, let dispose() handle it if screen is popped.
-      // If app is just backgrounded, we might want to reinitialize on resume.
-      // _disposeController(); // Might be too aggressive here and cause issues on quick resume
+      // Release camera resources when app goes to background
+      _disposeController();
     } else if (state == AppLifecycleState.resumed) {
       developer.log('CameraCaptureScreen: App resumed.', name: 'CameraCaptureScreen');
-      if (currentCameraController == null || !currentCameraController.value.isInitialized) {
-        developer.log('CameraCaptureScreen: Controller not ready on resume, attempting re-init.', name: 'CameraCaptureScreen');
-        if (_isPermissionGranted) {
-          _initializeCamera();
+      // Add delay before reinitializing to avoid resource contention
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted || _isDisposing) return;
+        
+        if (currentCameraController == null || !currentCameraController.value.isInitialized) {
+          developer.log('CameraCaptureScreen: Controller not ready on resume, attempting re-init.', name: 'CameraCaptureScreen');
+          if (_isPermissionGranted) {
+            _initializeCamera();
+          } else {
+            _requestPermissionAndInitializeCamera();
+          }
         } else {
-          _requestPermissionAndInitializeCamera();
+          developer.log('CameraCaptureScreen: Controller was already initialized on resume.', name: 'CameraCaptureScreen');
+          // Optionally re-apply flash mode if needed
+          currentCameraController.setFlashMode(_currentFlashMode).catchError((e){
+              _showCameraException(e is CameraException ? e : CameraException("FlashErrorOnResume", e.toString()));
+          });
         }
-      } else {
-        developer.log('CameraCaptureScreen: Controller was already initialized on resume.', name: 'CameraCaptureScreen');
-        // Optionally re-apply flash mode if needed
-        currentCameraController.setFlashMode(_currentFlashMode).catchError((e){
-            _showCameraException(e is CameraException ? e : CameraException("FlashErrorOnResume", e.toString()));
-         });
-      }
+      });
     }
   }
 
@@ -258,11 +350,12 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
     }
   }
 
+  // Example for taking a picture
   Future<void> _onTakePictureButtonPressed() async {
     developer.log('CameraCaptureScreen: Take picture button pressed.', name: 'CameraCaptureScreen');
-    if (!_isCameraInitialized || _cameraController == null || !_cameraController!.value.isInitialized || _cameraController!.value.isTakingPicture) {
+    if (!_isCameraControllerAvailable() || _cameraController!.value.isTakingPicture) {
       developer.log(
-        'CameraCaptureScreen: Cannot take picture. Initialized: $_isCameraInitialized, ControllerNull: ${_cameraController == null}, ControllerValueInitialized: ${_cameraController?.value.isInitialized}, IsTakingPicture: ${_cameraController?.value.isTakingPicture}',
+        'CameraCaptureScreen: Cannot take picture. Controller available: ${_isCameraControllerAvailable()}, IsTakingPicture: ${_cameraController?.value.isTakingPicture}',
         name: 'CameraCaptureScreen'
       );
       if(mounted) {
@@ -332,8 +425,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
     }
   }
 
+  // Update flash mode method
   Future<void> _onFlashModeButtonPressed() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (!_isCameraControllerAvailable()) return;
+    
     int nextModeIndex = (_availableFlashModes.indexOf(_currentFlashMode) + 1) % _availableFlashModes.length;
     FlashMode nextFlashMode = _availableFlashModes[nextModeIndex];
 
@@ -358,14 +453,23 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> with WidgetsB
     }
   }
 
+  // Modify your dispose method to ensure proper cleanup
   @override
   Future<void> dispose() async {
     developer.log('CameraCaptureScreen: dispose() called.', name: 'CameraCaptureScreen');
     _isDisposing = true;
     WidgetsBinding.instance.removeObserver(this);
-    await _disposeController(); // Use the new centralized async dispose method
+    await _disposeController(); // Use the centralized async dispose method
     super.dispose();
     developer.log('CameraCaptureScreen: dispose() finished.', name: 'CameraCaptureScreen');
+  }
+  
+  // Add this safety method to check controller state before using it
+  bool _isCameraControllerAvailable() {
+    return _cameraController != null && 
+           !_isDisposing && 
+           mounted &&
+           _cameraController!.value.isInitialized;
   }
 
   @override

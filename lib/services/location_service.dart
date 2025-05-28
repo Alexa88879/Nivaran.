@@ -4,28 +4,53 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:developer' as developer; // For logging
 
 class LocationService {
+  // Add this flag to track permission requests
+  bool _isRequestingPermission = false;
+  
   Future<Position?> getCurrentPosition() async {
-    PermissionStatus status = await Permission.locationWhenInUse.request();
-
-    if (!status.isGranted) {
-      if (status.isPermanentlyDenied) {
-        // Consider prompting to open settings, but don't call openAppSettings() directly here
-        // Let the UI decide to show a button for that.
-        developer.log('Location permission permanently denied.', name: 'LocationService');
-      } else {
-        developer.log('Location permission denied.', name: 'LocationService');
+    // Check if permission is already granted first
+    PermissionStatus currentStatus = await Permission.locationWhenInUse.status;
+    
+    if (currentStatus.isGranted) {
+      // Permission already granted, proceed directly
+      try {
+        return await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      } catch (e, s) {
+        developer.log('Error getting location: $e', name: 'LocationService', error: e, stackTrace: s);
+        throw Exception('Failed to get current location: ${e.toString()}');
       }
-      throw Exception('Location permission not granted. Status: $status');
     }
-
+    
+    // Need to request permission
+    if (_isRequestingPermission) {
+      // Wait for the existing request to complete
+      throw Exception('A location permission request is already in progress');
+    }
+    
     try {
-      // Use desiredAccuracy instead of locationSettings (which is invalid here)
+      _isRequestingPermission = true;
+      PermissionStatus status = await Permission.locationWhenInUse.request();
+      
+      if (!status.isGranted) {
+        if (status.isPermanentlyDenied) {
+          developer.log('Location permission permanently denied.', name: 'LocationService');
+        } else {
+          developer.log('Location permission denied.', name: 'LocationService');
+        }
+        throw Exception('Location permission not granted. Status: $status');
+      }
+      
+      // Permission granted, get position
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
     } catch (e, s) {
-      developer.log('Error getting location: $e', name: 'LocationService', error: e, stackTrace: s);
+      developer.log('Error in permission or location: $e', name: 'LocationService', error: e, stackTrace: s);
       throw Exception('Failed to get current location: ${e.toString()}');
+    } finally {
+      _isRequestingPermission = false;
     }
   }
 
