@@ -220,5 +220,3 @@ This project is licensed under the terms specified in the [LICENSE](LICENSE.md) 
 * Contributors to all the open-source packages used.
 
 ---
-
-*This README is a template. Please update it with specific details about your project, including correct repository URLs, contact information, and any additional setup steps or known issues.*
