@@ -7,7 +7,10 @@ import 'feed/issues_list_screen.dart';
 import 'report/camera_capture_screen.dart';
 import 'profile/account_screen.dart';
 import 'map/map_view_screen.dart';
-import 'notifications/notifications_screen.dart'; // <-- NEW: Import for NotificationsScreen
+import 'notifications/notifications_screen.dart';
+import 'impact/community_impact_screen.dart';
+import '../services/offline_sync_service.dart';
+import '../widgets/offline_banner.dart';
 import '../utils/update_checker.dart';
 import 'dart:developer' as developer;
 
@@ -23,13 +26,14 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
   User? _currentUser;
   bool _hasCheckedUpdate = false;
 
-  // Updated _widgetOptions to include NotificationsScreen
+  // Widget options for bottom navigation
   static final List<Widget> _widgetOptions = <Widget>[
     const IssuesListScreen(),
     const CameraCaptureScreen(),
     const MapViewScreen(),
-    const NotificationsScreen(), // <-- NEW: Notifications Screen Added
-    AccountScreen(key: UniqueKey()), // Ensure AccountScreen rebuilds if needed
+    const NotificationsScreen(),
+    const CommunityImpactScreen(), // Added Community Impact Dashboard
+    AccountScreen(key: UniqueKey()),
   ];
 
   @override
@@ -123,32 +127,45 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
 
 
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _widgetOptions,
+      body: Column(
+        children: [
+          // Offline banner will only show when app is offline
+          const OfflineBanner(),
+          
+          // Main content area
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: _widgetOptions,
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: <BottomNavigationBarItem>[
           BottomNavigationBarItem(
             icon: Icon(_selectedIndex == 0 ? Icons.list_alt_rounded : Icons.list_alt_outlined),
-            label: '',
+            label: 'Issues',
           ),
           BottomNavigationBarItem(
             icon: Icon(_selectedIndex == 1 ? Icons.camera_alt : Icons.camera_alt_outlined),
-            label: '',
+            label: 'Report',
           ),
           BottomNavigationBarItem(
             icon: Icon(_selectedIndex == 2 ? Icons.map : Icons.map_outlined),
-            label: '',
-          ),
-          BottomNavigationBarItem( // <-- NEW: Notifications Tab
-            // TODO: Add badge for unread notifications later
-            icon: Icon(_selectedIndex == 3 ? Icons.notifications : Icons.notifications_outlined),
-            label: '',
+            label: 'Map',
           ),
           BottomNavigationBarItem(
-            icon: Icon(_selectedIndex == 4 ? Icons.person : Icons.person_outlined),
-            label: '',
+            icon: Icon(_selectedIndex == 3 ? Icons.notifications : Icons.notifications_outlined),
+            label: 'Alerts',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(_selectedIndex == 4 ? Icons.bar_chart : Icons.bar_chart_outlined),
+            label: 'Impact',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(_selectedIndex == 5 ? Icons.person : Icons.person_outlined),
+            label: 'Profile',
           ),
         ],
         currentIndex: _selectedIndex,
@@ -156,10 +173,12 @@ class _MainAppScaffoldState extends State<MainAppScaffold> with WidgetsBindingOb
         unselectedItemColor: Colors.grey[600],
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
-        showSelectedLabels: false,
-        showUnselectedLabels: false,
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
         backgroundColor: Colors.white,
         elevation: 8.0,
+        selectedFontSize: 12.0,
+        unselectedFontSize: 10.0,
       ),
     );
   }

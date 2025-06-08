@@ -33,6 +33,18 @@ class CategoryModel {
     );
   }
 
+  factory CategoryModel.fromMap(Map<String, dynamic> data, String id) {
+    return CategoryModel(
+      id: id,
+      name: data['name'] as String? ?? 'Unnamed Category',
+      defaultDepartment: data['defaultDepartment'] as String? ?? 'General Grievances',
+      description: data['description'] as String?,
+      iconName: data['iconName'] as String?,
+      isActive: data['isActive'] as bool? ?? true,
+      sortOrder: data['sortOrder'] as int?,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'name': name,

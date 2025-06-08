@@ -6,7 +6,8 @@ import 'package:firebase_messaging/firebase_messaging.dart'; // <-- ADDED
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
 import 'services/user_profile_service.dart'; 
-import 'services/notification_service.dart'; // <-- ADDED
+import 'services/notification_service.dart';
+import 'services/offline_sync_service.dart';
 import 'screens/role_selection_screen.dart';
 import 'screens/auth/auth_options_screen.dart';
 import 'screens/auth/login_screen.dart';    
@@ -19,8 +20,10 @@ import 'screens/official/official_set_password_screen.dart';
 import 'screens/official/official_dashboard_screen.dart'; 
 import 'screens/main_app_scaffold.dart'; 
 import 'screens/public_dashboard_screen.dart';
-import 'screens/notifications/notifications_screen.dart'; // For route definition
-import 'screens/feed/issue_details_screen.dart'; // Placeholder for issue details navigation
+import 'screens/notifications/notifications_screen.dart';
+import 'screens/feed/issue_details_screen.dart';
+import 'screens/feed/issue_collaboration_screen.dart';
+import 'screens/impact/community_impact_screen.dart';
 import 'dart:developer' as developer;
 
 
@@ -49,8 +52,19 @@ void main() async {
       providers: [
         Provider<AuthService>(create: (_) => AuthService()),
         ChangeNotifierProvider<UserProfileService>(create: (_) => UserProfileService()),
-        // Provide NotificationService, passing the navigatorKey
         Provider<NotificationService>(create: (_) => NotificationService(navigatorKey: navigatorKey)),
+        ChangeNotifierProxyProvider<UserProfileService, OfflineSyncService>(
+          create: (_) => OfflineSyncService(),
+          update: (_, userService, offlineService) {
+            // Initialize or update offline service with user data when available
+            if (userService.currentUserProfile != null && offlineService != null) {
+              offlineService.setCurrentUser(userService.currentUserProfile!.uid);
+              // Refresh cached issues when user is available
+              offlineService.refreshCachedIssues();
+            }
+            return offlineService ?? OfflineSyncService();
+          },
+        ),
       ],
       child: const MyApp(),
     ),
