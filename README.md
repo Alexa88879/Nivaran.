@@ -63,6 +63,30 @@ Nivaran empowers citizens to report various local problems such as potholes, gar
 * **Offline Support (Potential):** Basic caching for viewing previously loaded data.
 * **Update Checker:** Notifies users about new app versions.
 
+## 📸 App Screenshots
+
+Here’s an overview of the **Nivaran** app’s key screens and features:
+
+| **Splash Screen** | **Public Dashboard** | **Officials Issue Dashboard** | **Officials Statistics 1** |
+| --- | --- | --- | --- |
+| ![](assets/icon/1.jpg) | ![](assets/icon/2.jpg) | ![](assets/icon/3.jpg) | ![](assets/icon/4-1.jpg) |
+
+| **Officials Statistics 2** | **Officials Alerts** | **Officials Profile 1** | **Officials Profile 2** |
+| --- | --- | --- | --- |
+| ![](assets/icon/4-2.jpg) | ![](assets/icon/5.jpg) | ![](assets/icon/6-1.jpg) | ![](assets/icon/6-2.jpg) |
+
+| **User Issue Dashboard** | **AI Prediction** | **User Captures Image** | **Report an Issue** |
+| --- | --- | --- | --- |
+| ![](assets/icon/7-1.jpg) | ![](assets/icon/7-2.jpg) | ![](assets/icon/8-1.jpg) | ![](assets/icon/8-2.jpg) |
+
+| **Voice Reporting on Issue** | **Map View** | **Map Zoom & Marker** | **User Alerts** |
+| --- | --- | --- | --- |
+| ![](assets/icon/8-3.jpg) | ![](assets/icon/9-1.jpg) | ![](assets/icon/9-2.jpg) | ![](assets/icon/10.jpg) |
+
+| **User Profile** | **Comments** |
+| --- | --- |
+| ![](assets/icon/11.jpg) | ![](assets/icon/12.jpg) |
+
 ## Tech Stack
 
 * **Frontend:** Flutter
