@@ -67,25 +67,29 @@ Nivaran empowers citizens to report various local problems such as potholes, gar
 
 Here’s an overview of the **Nivaran** app’s key screens and features:
 
-| **Splash Screen** | **Public Dashboard** | **Officials Issue Dashboard** | **Officials Statistics 1** |
-| --- | --- | --- | --- |
-| ![](assets/icon/1.jpg) | ![](assets/icon/2.jpg) | ![](assets/icon/3.jpg) | ![](assets/icon/4-1.jpg) |
+| **Splash Screen** | **Public Dashboard** | **Officials Issue Dashboard** |
+| --- | --- | --- |
+| ![](assets/icon/1.jpg) | ![](assets/icon/2.jpg) | ![](assets/icon/3.jpg) |
 
-| **Officials Statistics 2** | **Officials Alerts** | **Officials Profile 1** | **Officials Profile 2** |
-| --- | --- | --- | --- |
-| ![](assets/icon/4-2.jpg) | ![](assets/icon/5.jpg) | ![](assets/icon/6-1.jpg) | ![](assets/icon/6-2.jpg) |
+| **Officials Statistics 1** | **Officials Statistics 2** | **Officials Alerts** |
+| --- | --- | --- |
+| ![](assets/icon/4-1.jpg) | ![](assets/icon/4-2.jpg) | ![](assets/icon/5.jpg) |
 
-| **User Issue Dashboard** | **AI Prediction** | **User Captures Image** | **Report an Issue** |
-| --- | --- | --- | --- |
-| ![](assets/icon/7-1.jpg) | ![](assets/icon/7-2.jpg) | ![](assets/icon/8-1.jpg) | ![](assets/icon/8-2.jpg) |
+| **Officials Profile 1** | **Officials Profile 2** | **User Issue Dashboard** |
+| --- | --- | --- |
+| ![](assets/icon/6-1.jpg) | ![](assets/icon/6-2.jpg) | ![](assets/icon/7-1.jpg) |
 
-| **Voice Reporting on Issue** | **Map View** | **Map Zoom & Marker** | **User Alerts** |
-| --- | --- | --- | --- |
-| ![](assets/icon/8-3.jpg) | ![](assets/icon/9-1.jpg) | ![](assets/icon/9-2.jpg) | ![](assets/icon/10.jpg) |
+| **AI Prediction** | **User Captures Image** | **Report an Issue** |
+| --- | --- | --- |
+| ![](assets/icon/7-2.jpg) | ![](assets/icon/8-1.jpg) | ![](assets/icon/8-2.jpg) |
 
-| **User Profile** | **Comments** |
-| --- | --- |
-| ![](assets/icon/11.jpg) | ![](assets/icon/12.jpg) |
+| **Voice Reporting on Issue** | **Map View** | **Map Zoom & Marker** |
+| --- | --- | --- |
+| ![](assets/icon/8-3.jpg) | ![](assets/icon/9-1.jpg) | ![](assets/icon/9-2.jpg) |
+
+| **User Alerts** | **User Profile** | **Comments** |
+| --- | --- | --- |
+| ![](assets/icon/10.jpg) | ![](assets/icon/11.jpg) | ![](assets/icon/12.jpg) |
 
 ## Tech Stack
 
